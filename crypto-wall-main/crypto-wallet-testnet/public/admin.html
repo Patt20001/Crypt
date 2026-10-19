@@ -45,7 +45,10 @@
     <div class="card">
       <h3>Copy Trading</h3>
       <p class="tag" style="margin-bottom: 14px;">Seed demo traders for the copy trading feature.</p>
-      <button class="secondary sm" onclick="seedCopyTraders()">Seed Demo Traders</button>
+      <div style="display:flex; gap:8px; flex-wrap:wrap;">
+  <button class="secondary sm" onclick="seedCopyTraders()">Seed Demo Traders</button>
+  <button class="danger sm" onclick="seedCopyTraders(true)">Reset & Re-seed</button>
+</div>
       <div id="seed-copy-result" style="margin-top: 12px;"></div>
     </div>
 

@@ -1,7 +1,7 @@
 const mongoose = require('mongoose');
 
 const copyTraderSchema = new mongoose.Schema({
-  user:        { type: mongoose.Schema.Types.ObjectId, ref: 'User', default: null },  // ← no unique
+  user:        { type: mongoose.Schema.Types.ObjectId, ref: 'User', default: null },
   displayName: { type: String, required: true },
   bio:         { type: String, default: '' },
   tier:        { type: String, enum: ['bronze', 'silver', 'gold', 'diamond'], default: 'bronze' },

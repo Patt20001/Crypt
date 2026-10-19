@@ -96,8 +96,22 @@ router.post('/seed', auth, async (req, res) => {
     if (req.user.role !== 'admin') {
       return res.status(403).json({ error: 'Admin only' });
     }
-    const existing = await CopyTrader.countDocuments();
-    if (existing > 0) return res.json({ message: 'Already seeded', count: existing });
+
+    const force = req.query.force === 'true';
+
+    // Force mode: wipe and reseed
+    if (force) {
+      await CopyTrader.deleteMany({});
+    } else {
+      const existing = await CopyTrader.countDocuments();
+      if (existing > 0) {
+        return res.json({
+          message: 'Already seeded',
+          count: existing,
+          hint: 'Use ?force=true to reset and reseed'
+        });
+      }
+    }
 
     const traders = await CopyTrader.insertMany([
       { displayName: 'Alpha Whale',    bio: 'Swing trader focusing on BTC/ETH breakouts',
@@ -113,6 +127,7 @@ router.post('/seed', auth, async (req, res) => {
       { displayName: 'Scalpel Sarah',  bio: 'Intraday trader with tight stops',
         tier: 'diamond', roi30d: 38.7, winRate: 66, followers: 2103, totalTrades: 4521 }
     ]);
+
     res.json({ message: 'Seeded', count: traders.length });
   } catch (e) { res.status(500).json({ error: e.message }); }
 });

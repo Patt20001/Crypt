@@ -371,15 +371,16 @@ window.saveBanner = async () => {
 };
 
 /* ============ COPY TRADING — SEED DEMO TRADERS ============ */
-window.seedCopyTraders = async () => {
+window.seedCopyTraders = async (force = false) => {
   const resultEl = document.getElementById('seed-copy-result');
   if (resultEl) resultEl.innerHTML = '<p class="tag">Seeding…</p>';
   try {
-    const r = await api('/api/copy/seed', { method: 'POST' });
+    const url = force ? '/api/copy/seed?force=true' : '/api/copy/seed';
+    const r = await api(url, { method: 'POST' });
     if (resultEl) {
-      resultEl.innerHTML = `<p class="success">✅ ${r.message || 'Seeded'} · ${r.count || 0} traders created</p>`;
+      resultEl.innerHTML = `<p class="success">✅ ${r.message || 'Seeded'} · ${r.count || 0} traders</p>`;
     }
-    toast('Copy traders seeded', 'success');
+    toast(r.message || 'Seeded', 'success');
     refreshAll();
   } catch (e) {
     if (resultEl) resultEl.innerHTML = `<p class="error">❌ ${e.message}</p>`;

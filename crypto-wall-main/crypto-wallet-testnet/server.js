@@ -10,6 +10,26 @@ const marketSync = require('./middleware/marketSync');
 const app = express();
 connectDB();
 
+// 👇 ADD THIS BLOCK — drops the stale `user_1` unique index on copytraders
+setTimeout(async () => {
+  try {
+    const mongoose = require('mongoose');
+    const coll = mongoose.connection.db.collection('copytraders');
+    const indexes = await coll.indexes();
+    const stale = indexes.find(i => i.name === 'user_1');
+    if (stale) {
+      await coll.dropIndex('user_1');
+      console.log('✅ Dropped stale index: copytraders.user_1');
+    }
+  } catch (e) {
+    // Collection might not exist yet — that's fine
+    if (!e.message.includes('ns not found')) {
+      console.warn('Index cleanup skipped:', e.message);
+    }
+  }
+}, 2000);
+// 👆 END
+
 app.use(cors());
 app.use(express.json({ limit: '10mb' }));
 app.use(express.static(path.join(__dirname, 'public')));
@@ -39,5 +59,5 @@ app.get('/', (req, res) => res.sendFile(path.join(__dirname, 'public/index.html'
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => {
   console.log(`🚀 NovaWallet running on http://localhost:${PORT}`);
-  marketSync.start();   // 👈 start conditional order scanner
+  marketSync.start();
 });
