@@ -1,0 +1,119 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Trade — NovaWallet</title>
+<script src="/js/theme.js"></script>
+<link rel="stylesheet" href="/css/style.css" />
+<script src="https://unpkg.com/lightweight-charts/dist/lightweight-charts.standalone.production.js"></script>
+</head>
+<body>
+  <div class="nav glass">
+    <div class="brand"><div class="brand-logo">₮</div><span>Nova<span class="brand-accent">Wallet</span></span></div>
+    <div class="nav-links">
+      <a href="/dashboard.html" class="nav-link">Dashboard</a>
+      <a href="/portfolio.html" class="nav-link">Portfolio</a>
+      <a href="/orders.html" class="nav-link active">Trade</a>
+      <a href="/staking.html" class="nav-link">Stake</a>
+      <a href="/swap.html" class="nav-link">Swap</a>
+      <a href="/wallet.html" class="nav-link">Wallet</a>
+      <a href="/profile.html" class="nav-link">Profile</a>
+      <div class="theme-toggle" data-action="toggle-theme">🌓</div>
+      <a href="#" data-action="logout" class="nav-link">Logout</a>
+    </div>
+  </div>
+
+  <div class="container">
+    <h2>Spot Trading</h2>
+
+    <!-- Pair selector + price header -->
+    <div class="card" style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:12px;">
+      <div style="display:flex; gap:8px; flex-wrap:wrap;">
+        <div class="net-chip" data-pair="BTC/USDT" onclick="selectPair('BTC/USDT')">BTC / USDT</div>
+        <div class="net-chip" data-pair="ETH/USDT" onclick="selectPair('ETH/USDT')">ETH / USDT</div>
+      </div>
+      <div style="text-align:right;">
+        <div class="tag">Last price</div>
+        <div id="pair-price" style="font-size: 22px; font-weight: 800;">—</div>
+      </div>
+    </div>
+
+       <!-- Replace the SVG chart card with this -->
+<div class="card">
+  <h3>Price Chart <span id="chart-pair-label" style="color: var(--text-mute); font-weight: 500;">· BTC/USDT</span></h3>
+  <div id="candle-chart" style="width: 100%; height: 380px;"></div>
+</div>
+    
+    <!-- Order book + Place order -->
+    <div class="grid grid-2" style="align-items: start;">
+      <!-- ORDER BOOK -->
+      <div class="card">
+        <h3>Order Book</h3>
+        <div style="display:grid; grid-template-columns: 1fr 1fr 1fr; gap: 6px; font-size: 11px; color: var(--text-mute); text-transform: uppercase; letter-spacing: .06em; padding-bottom: 8px; border-bottom: 1px solid var(--border);">
+          <span>Price</span>
+          <span style="text-align:right;">Amount</span>
+          <span style="text-align:right;">Total</span>
+        </div>
+
+        <!-- Asks (sells) -->
+        <div id="asks" style="margin: 8px 0; display:flex; flex-direction:column-reverse; gap: 3px;"></div>
+
+        <!-- Spread -->
+        <div id="spread" style="padding: 10px 0; margin: 6px 0; border-top: 1px solid var(--border); border-bottom: 1px solid var(--border); text-align:center; font-size: 16px; font-weight: 700;"></div>
+
+        <!-- Bids (buys) -->
+        <div id="bids" style="margin: 8px 0; display:flex; flex-direction:column; gap: 3px;"></div>
+      </div>
+
+      <!-- PLACE ORDER -->
+      <div class="card">
+        <h3>Place Order</h3>
+
+        <div style="display:flex; gap:6px; margin-bottom:16px;">
+          <button id="btn-buy" style="flex:1;" onclick="setSide('buy')">Buy</button>
+          <button id="btn-sell" class="secondary" style="flex:1;" onclick="setSide('sell')">Sell</button>
+        </div>
+
+        <label>Price (USDT)</label>
+        <input id="order-price" type="number" step="0.01" placeholder="0.00" />
+
+        <label>Amount</label>
+        <input id="order-amount" type="number" step="0.00000001" placeholder="0.00"
+          oninput="updateOrderTotal()" />
+
+        <div class="row">
+          <div class="row-label">Total</div>
+          <div class="row-sub" id="order-total" style="font-weight:600; color: var(--text);">0.00 USDT</div>
+        </div>
+
+        <div class="row">
+          <div class="row-label">Available</div>
+          <div class="row-sub" id="order-avail">—</div>
+        </div>
+
+        <button style="width:100%; margin-top: 12px;" id="btn-submit" onclick="placeOrder()">Buy BTC</button>
+      </div>
+    </div>
+
+    <!-- My Orders -->
+    <div class="card">
+      <h3>My Open Orders</h3>
+      <div id="my-orders"></div>
+    </div>
+
+    <!-- Recent Trades -->
+    <div class="card">
+      <h3>Recent Trades</h3>
+      <div id="trades"></div>
+    </div>
+  </div>
+
+  <script src="/js/ui.js"></script>
+  <script src="/js/auth.js"></script>
+  <script src="/js/prices.js"></script>
+  <script src="/js/notifications.js"></script>
+  <script src="/js/chart.js"></script>
+  <script src="/js/orders.js"></script>
+</body>
+</html>

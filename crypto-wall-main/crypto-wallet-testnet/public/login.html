@@ -1,0 +1,48 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Login — NovaWallet</title>
+<script src="/js/theme.js"></script>
+<link rel="stylesheet" href="/css/style.css" />
+</head>
+<body>
+  <div class="center">
+    <div class="card auth-card">
+      <div class="brand" style="margin-bottom: 24px;">
+        <div class="brand-logo">₮</div>
+        <span style="font-size: 18px;">Nova<span class="brand-accent">Wallet</span></span>
+      </div>
+      <div class="auth-title">Welcome back</div>
+      <div class="auth-sub">Sign in to continue to your wallet</div>
+
+      <div id="msg"></div>
+
+      <label>Email</label>
+      <input id="email" type="email" placeholder="you@example.com" />
+
+      <label>Password</label>
+      <input id="password" type="password" placeholder="••••••••" />
+
+     <div id="twofa-wrap" style="display:none; margin-bottom: 12px;">
+  <label>2FA code from authenticator app</label>
+  <input id="code" placeholder="123 456" maxlength="7"
+    style="text-align:center; font-family: monospace; font-size: 20px; letter-spacing: 6px;" />
+  <p class="tag" style="margin-top: -8px;">
+    Open Google Authenticator, Authy, or 1Password and enter the current 6-digit code.
+  </p>
+</div>
+
+      <button style="width:100%" onclick="login()">Sign In</button>
+
+      <p style="margin-top: 18px; font-size: 13px; color: var(--text-dim); text-align: center;">
+        No account? <a href="/register.html">Create one</a>
+      </p>
+    </div>
+  </div>
+  <script src="/js/ui.js"></script>
+  <script src="/js/theme.js"></script>
+  <script src="/js/auth.js"></script>
+</body>
+</html>

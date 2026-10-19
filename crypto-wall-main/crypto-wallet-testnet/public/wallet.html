@@ -1,0 +1,206 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Wallet — NovaWallet</title>
+<script src="/js/theme.js"></script>
+<link rel="stylesheet" href="/css/style.css" />
+<script src="https://cdn.jsdelivr.net/npm/qrcodejs@1.0.0/qrcode.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/jsqr@1.4.0/dist/jsQR.js"></script>
+</head>
+<body>
+  <div class="nav glass">
+    <div class="brand">
+      <div class="brand-logo">₮</div>
+      <span>Nova<span class="brand-accent">Wallet</span></span>
+    </div>
+    <div class="nav-links">
+      <a href="/dashboard.html" class="nav-link">Dashboard</a>
+      <a href="/portfolio.html" class="nav-link">Portfolio</a>
+      <a href="/staking.html" class="nav-link">Stake</a>
+      <a href="/swap.html" class="nav-link">Swap</a>
+      <a href="/wallet.html" class="nav-link active">Wallet</a>
+      <a href="/referrals.html" class="nav-link">Refer</a>
+      <a href="/profile.html" class="nav-link">Profile</a>
+      <div class="theme-toggle" data-action="toggle-theme" title="Toggle theme">🌓</div>
+      <a href="#" data-action="logout" class="nav-link">Logout</a>
+    </div>
+  </div>
+
+  <div class="container">
+    <h2>Wallet</h2>
+
+    <div id="limits-banner"></div>
+
+    <div class="card">
+      <h3>Select Network</h3>
+      <div id="networks" style="display:flex; gap:8px; flex-wrap:wrap; margin-top: 10px;"></div>
+    </div>
+
+    <div class="grid grid-2">
+          <!-- ================= DEPOSIT CARD ================= -->
+      <div class="card qr-card">
+        <h3>Deposit USDT</h3>
+        <p class="tag" style="margin-bottom: 16px;">
+          Send only <b id="dep-sym">USDT</b> on <b id="dep-net">TRC20</b> to this address.
+        </p>
+
+        <div class="qr-wrap" id="qr"></div>
+
+        <div class="addr-copy">
+          <span id="dep-addr">…</span>
+          <button class="secondary sm" onclick="copyAddr()">Copy</button>
+        </div>
+
+        <p class="tag" style="margin-top: 12px;">
+          Minimum deposit: <span id="dep-min">1</span> USDT ·
+          Confirms in ~<span id="dep-conf">19</span> blocks
+        </p>
+
+        <div style="
+          margin-top: 20px;
+          padding: 14px 16px;
+          border-radius: 12px;
+          background: linear-gradient(135deg, rgba(34,211,238,.08), rgba(74,222,128,.06));
+          border: 1px solid rgba(34,211,238,.22);
+          font-size: 13px;
+          line-height: 1.6;
+        ">
+          <div style="display:flex; gap:10px; align-items:flex-start;">
+            <span style="font-size: 18px; line-height:1;">💡</span>
+            <div>
+              <b>Sent the funds?</b><br>
+              If your deposit doesn't start processing automatically, tap the button below.
+              We'll pick it up on-chain and credit your wallet once confirmed.
+            </div>
+          </div>
+        </div>
+
+        <button style="width:100%; margin-top: 16px;" id="btn-deposit" onclick="deposit()">
+          I have sent the funds
+        </button>
+      </div>
+      <!-- ================= WITHDRAW CARD ================= -->
+      <div class="card">
+        <h3>Withdraw USDT</h3>
+        <p class="tag" style="margin-bottom: 16px;">Withdrawals are reviewed and processed within minutes.</p>
+
+        <label>Destination address</label>
+        <div style="display:flex; gap:8px; align-items:flex-start; margin-bottom: 12px;">
+          <select id="addr-book" style="width: 140px; margin: 0;" onchange="pickAddress(this.value)">
+            <option value="">Address book</option>
+          </select>
+          <input id="w-addr" placeholder="Recipient wallet address" style="margin: 0; flex:1;" />
+          <button type="button" class="secondary sm" onclick="openQrScanner()" title="Scan QR" style="padding: 10px 12px;">📷</button>
+        </div>
+        <button class="secondary sm" onclick="saveAddress()" style="margin-bottom:14px;">+ Save this address</button>
+
+        <label>Amount (USDT)</label>
+        <input id="w-amt" type="number" placeholder="50" />
+
+        <div class="row">
+          <div>
+            <div class="row-label">Network fee</div>
+            <div class="row-sub" id="fee-line">1 USDT (TRC20)</div>
+          </div>
+          <div style="text-align:right;">
+            <div class="row-label">You receive</div>
+            <div class="row-sub" id="you-receive">≈ 0 USDT</div>
+          </div>
+        </div>
+        <div class="row">
+          <div class="row-label">Available balance</div>
+          <div class="row-sub" id="w-avail">0.00 USDT</div>
+        </div>
+
+        <button style="width:100%; margin-top: 12px;" id="btn-withdraw" onclick="withdraw()">Request Withdrawal</button>
+      </div>
+    </div>
+
+    <div class="card">
+      <h3>Transaction history</h3>
+      <div id="txs">
+        <div class="skeleton skeleton-row"></div>
+        <div class="skeleton skeleton-row"></div>
+        <div class="skeleton skeleton-row"></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ================= QR SCANNER MODAL ================= -->
+  <div class="modal" id="qr-modal">
+    <div class="modal-inner glass">
+      <h3>Scan QR</h3>
+      <div class="qr-video-wrap">
+        <video id="qr-video" autoplay muted playsinline></video>
+      </div>
+      <p id="qr-status" class="tag" style="text-align:center; margin-top: 10px;">Initializing…</p>
+      <button class="secondary" style="width:100%; margin-top:12px;" onclick="closeQrScanner()">Cancel</button>
+    </div>
+  </div>
+
+  <!-- ================= TX DETAIL MODAL ================= -->
+  <div class="modal" id="tx-modal">
+    <div class="modal-inner glass" id="tx-modal-body">
+      <h3>Transaction Details</h3>
+      <div id="tx-detail-content"></div>
+      <button class="secondary" style="width:100%; margin-top:16px;" onclick="document.getElementById('tx-modal').classList.remove('open')">Close</button>
+    </div>
+  </div>
+
+   <!-- ================= WITHDRAWAL 2FA MODAL ================= -->
+  <div class="modal" id="withdraw-2fa-modal">
+    <div class="modal-inner glass" style="max-width: 460px;">
+      <div class="modal-head">
+        <h3>Confirm Withdrawal</h3>
+        <button class="modal-close" onclick="cancelWithdrawal()">×</button>
+      </div>
+
+      <div style="
+        padding: 12px 14px;
+        border-radius: 10px;
+        background: rgba(148,163,184,.08);
+        border: 1px solid var(--border);
+        margin-bottom: 18px;
+        font-size: 13px;
+      ">
+        <div style="display:flex; justify-content:space-between; margin-bottom: 6px;">
+          <span class="tag">Amount</span>
+          <b id="wd-summary-amount" style="color: var(--text);">0 USDT</b>
+        </div>
+        <div style="display:flex; justify-content:space-between; margin-bottom: 6px;">
+          <span class="tag">Network</span>
+          <b id="wd-summary-network" style="color: var(--text);">TRC20</b>
+        </div>
+        <div style="display:flex; justify-content:space-between;">
+          <span class="tag">To</span>
+          <b id="wd-summary-address" style="color: var(--text); font-family: monospace; font-size: 11px; word-break: break-all; text-align: right; max-width: 220px;">—</b>
+        </div>
+      </div>
+
+      <label>Authenticator code</label>
+      <input id="withdraw-2fa-code" maxlength="7" placeholder="123 456" autocomplete="one-time-code"
+        style="text-align:center; font-family: monospace; font-size: 22px; letter-spacing: 8px; padding: 14px;" />
+
+      <p class="tag" style="margin-top: -6px; margin-bottom: 12px;">
+        Open Google Authenticator, Authy, or 1Password and enter the current 6-digit code.
+      </p>
+
+      <div id="withdraw-2fa-msg" style="min-height: 18px; margin-bottom: 10px;"></div>
+
+      <div style="display:flex; gap: 10px;">
+        <button class="secondary" style="flex:1;" onclick="cancelWithdrawal()">Cancel</button>
+        <button style="flex:1;" onclick="confirmWithdrawal()">Confirm Withdrawal</button>
+      </div>
+    </div>
+  </div> 
+  
+  <script src="/js/ui.js"></script>
+  <script src="/js/auth.js"></script>
+  <script src="/js/prices.js"></script>
+  <script src="/js/notifications.js"></script>
+  <script src="/js/qr-scan.js"></script>
+  <script src="/js/wallet.js"></script>
+</body>
+</html>

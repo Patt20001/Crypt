@@ -1,0 +1,49 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Portfolio — NovaWallet</title>
+<script src="/js/theme.js"></script>
+<link rel="stylesheet" href="/css/style.css" />
+</head>
+<body>
+  <div class="nav glass">
+    <div class="brand"><div class="brand-logo">₮</div><span>Nova<span class="brand-accent">Wallet</span></span></div>
+    <div class="nav-links">
+      <a href="/dashboard.html" class="nav-link">Dashboard</a>
+      <a href="/portfolio.html" class="nav-link active">Portfolio</a>
+      <a href="/staking.html" class="nav-link">Stake</a>
+      <a href="/swap.html" class="nav-link">Swap</a>
+      <a href="/wallet.html" class="nav-link">Wallet</a>
+      <a href="/referrals.html" class="nav-link">Refer</a>
+      <a href="/profile.html" class="nav-link">Profile</a>
+      <div class="theme-toggle" data-action="toggle-theme">🌓</div>
+      <a href="#" data-action="logout" class="nav-link">Logout</a>
+    </div>
+  </div>
+
+  <div class="container">
+    <h2>Portfolio</h2>
+
+    <div class="card">
+      <h3>Total balance</h3>
+      <div class="balance" id="total" style="font-size: 42px;">$0.00</div>
+    </div>
+
+    <div class="card">
+      <h3>Last 30 days</h3>
+      <svg id="chart" style="width:100%; height: 240px; display:block;"></svg>
+    </div>
+
+    <h3 style="margin-top: 24px; margin-bottom: 12px; color: var(--text-mute); font-size: 11px; text-transform: uppercase; letter-spacing: 0.09em;">Holdings</h3>
+    <div class="grid grid-3" id="holdings"></div>
+  </div>
+
+  <script src="/js/ui.js"></script>
+  <script src="/js/auth.js"></script>
+  <script src="/js/prices.js"></script>
+  <script src="/js/notifications.js"></script>
+  <script src="/js/portfolio.js"></script>
+</body>
+</html>

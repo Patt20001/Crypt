@@ -1,0 +1,78 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Swap — NovaWallet</title>
+<script src="/js/theme.js"></script>
+<link rel="stylesheet" href="/css/style.css" />
+</head>
+<body>
+ <div class="nav glass">
+  <div class="brand">
+    <div class="brand-logo">₮</div>
+    <span>Nova<span class="brand-accent">Wallet</span></span>
+  </div>
+  <div class="nav-links">
+    <a href="/dashboard.html" class="nav-link">Dashboard</a>
+    <a href="/staking.html" class="nav-link">Stake</a>
+    <a href="/swap.html" class="nav-link">Swap</a>
+    <a href="/wallet.html" class="nav-link">Wallet</a>
+    <a href="/networks.html" class="nav-link">Networks</a>
+    <a href="/profile.html" class="nav-link">Profile</a>
+    <div class="theme-toggle" data-action="toggle-theme" title="Toggle theme">🌓</div>
+    <a href="#" data-action="logout" class="nav-link">Logout</a>
+  </div>
+</div>
+
+  <div class="container" style="max-width: 560px;">
+    <h2>Swap</h2>
+    <p class="tag" style="margin-bottom: 20px;">Convert between USDT, BTC, and ETH instantly. 0.5% swap fee.</p>
+
+    <div class="card">
+      <h3>From</h3>
+      <div class="swap-row">
+        <input id="from-amt" type="number" placeholder="0.00" step="0.00000001" />
+        <select id="from-cur">
+          <option>USDT</option><option>BTC</option><option>ETH</option>
+        </select>
+      </div>
+      <p class="tag">Available: <span id="from-bal">0.00</span></p>
+
+      <div class="swap-swap-icon" onclick="flipCurrencies()">⇅</div>
+
+      <h3>To</h3>
+      <div class="swap-row">
+        <input id="to-amt" type="number" placeholder="0.00" readonly />
+        <select id="to-cur">
+          <option>BTC</option><option>ETH</option><option>USDT</option>
+        </select>
+      </div>
+      <p class="tag">You receive</p>
+
+      <div class="row" style="margin-top: 18px;">
+        <div class="row-label">Rate</div>
+        <div class="row-sub" id="rate-line">—</div>
+      </div>
+      <div class="row">
+        <div class="row-label">Fee (0.5%)</div>
+        <div class="row-sub" id="fee-line">—</div>
+      </div>
+
+      <button style="width:100%; margin-top: 14px;" onclick="doSwap()">Swap Now</button>
+    </div>
+
+    <div class="card">
+      <h3>Recent Swaps</h3>
+      <div id="history"></div>
+    </div>
+  </div>
+
+  <script src="/js/ui.js"></script>
+  <script src="/js/auth.js"></script>
+  <script src="/js/prices.js"></script>
+  <script src="/js/prices.js"></script>
+  <script src="/js/notifications.js"></script>
+  <script src="/js/swap.js"></script>
+</body>
+</html>

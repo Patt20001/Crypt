@@ -1,0 +1,168 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Profile — NovaWallet</title>
+<script src="/js/theme.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/qrcodejs@1.0.0/qrcode.min.js"></script>
+<link rel="stylesheet" href="/css/style.css" />
+</head>
+<body>
+<div class="nav glass">
+  <div class="brand">
+    <div class="brand-logo">₮</div>
+    <span>Nova<span class="brand-accent">Wallet</span></span>
+  </div>
+  <div class="nav-links">
+    <a href="/dashboard.html" class="nav-link">Dashboard</a>
+    <a href="/staking.html" class="nav-link">Stake</a>
+    <a href="/swap.html" class="nav-link">Swap</a>
+    <a href="/wallet.html" class="nav-link">Wallet</a>
+    <a href="/networks.html" class="nav-link">Networks</a>
+    <a href="/profile.html" class="nav-link">Profile</a>
+    <div class="theme-toggle" data-action="toggle-theme" title="Toggle theme">🌓</div>
+    <a href="#" data-action="logout" class="nav-link">Logout</a>
+  </div>
+</div>
+
+  <div class="container">
+    <div class="card">
+      <div class="profile-header">
+        <div class="profile-avatar" id="avatar">?</div>
+        <div style="flex:1; min-width: 220px;">
+          <h2 id="uname" style="margin-bottom: 4px;">…</h2>
+          <div class="tag" id="email">…</div>
+          <div style="margin-top: 10px;">
+            <span class="kyc-pill kyc-unverified" id="kyc">KYC: Unverified</span>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="grid grid-2">
+      <div class="card">
+        <h3>Account</h3>
+        <label>Display name</label>
+        <input id="displayName" placeholder="Your name" />
+        <label>Country</label>
+        <input id="country" placeholder="e.g. Nigeria" />
+        <button onclick="saveProfile()">Save changes</button>
+      </div>
+
+      <div class="card">
+        <h3>Security</h3>
+        <div class="row">
+          <div>
+            <div class="row-label">Two-factor authentication</div>
+            <div class="row-sub">Require a code on every login</div>
+          </div>
+          <div class="switch" id="twofa"></div>
+        </div>
+        <div class="row">
+          <div>
+            <div class="row-label">Wallet address</div>
+            <div class="row-sub" id="addr" style="word-break:break-all; font-family:monospace;"></div>
+          </div>
+          <button class="secondary sm" onclick="rotate()">Rotate</button>
+        </div>
+        <div class="row">
+          <div>
+            <div class="row-label">Change password</div>
+            <div class="row-sub">Min 6 characters</div>
+          </div>
+          <button class="secondary sm" onclick="togglePwd()">Update</button>
+        </div>
+        <div id="pwd-form" style="display:none; margin-top: 14px;">
+          <label>Current password</label>
+          <input id="cur-pwd" type="password" />
+          <label>New password</label>
+          <input id="new-pwd" type="password" />
+          <button onclick="changePwd()">Save password</button>
+        </div>
+      </div>
+    </div>
+
+    <div class="card">
+      <h3>KYC Verification</h3>
+      <p class="tag" style="margin-bottom: 14px;">
+        Upload a government-issued ID, passport, or driver's license (JPG, PNG, WEBP, or PDF — max 5MB).
+      </p>
+
+      <div id="kyc-status-banner"></div>
+
+      <div id="upload-zone" class="upload-zone">
+        <input type="file" id="kyc-file" accept=".jpg,.jpeg,.png,.webp,.pdf" hidden />
+        <div class="upload-inner">
+          <div style="font-size: 34px;">📄</div>
+          <div style="font-weight: 600; margin-top: 8px;">Click to upload document</div>
+          <div class="tag" style="margin-top: 4px;">JPG · PNG · WEBP · PDF — 5MB max</div>
+        </div>
+      </div>
+
+      <div id="upload-progress" style="display:none; margin-top: 14px;">
+        <div class="progress"><div id="upload-progress-bar" style="width:0%"></div></div>
+        <p class="tag" style="margin-top: 6px;">Uploading…</p>
+      </div>
+
+      <div id="docs" style="margin-top: 20px;"></div>
+    </div>
+  </div>
+
+  <script src="/js/ui.js"></script>
+  <script src="/js/auth.js"></script>
+  <script src="/js/prices.js"></script>
+  <script src="/js/notifications.js"></script>
+  <script src="/js/profile.js"></script>
+
+    <!-- 2FA SETUP MODAL (QR + verify) -->
+  <div class="modal" id="twofa-modal">
+    <div class="modal-inner glass" style="max-width: 520px; max-height: 90vh; overflow-y: auto;">
+      <div class="modal-head">
+        <h3 id="twofa-modal-title">Two-Factor Authentication</h3>
+        <button class="modal-close" onclick="closeModal('twofa-modal')">×</button>
+      </div>
+      <div id="twofa-modal-body"></div>
+      <button class="secondary" style="width:100%; margin-top:12px;"
+        onclick="closeModal('twofa-modal')">
+        Close
+      </button>
+    </div>
+  </div>
+
+  <!-- 2FA DISABLE MODAL (password + code) -->
+  <div class="modal" id="disable-modal">
+    <div class="modal-inner glass" style="max-width: 460px;">
+      <div class="modal-head">
+        <h3>Disable Two-Factor Authentication</h3>
+        <button class="modal-close" onclick="closeModal('disable-modal')">×</button>
+      </div>
+
+      <div style="
+        padding: 12px 14px;
+        border-radius: 10px;
+        background: linear-gradient(135deg, rgba(239,68,68,.12), rgba(220,38,38,.08));
+        border: 1px solid rgba(239,68,68,.3);
+        margin-bottom: 18px;
+        font-size: 13px;
+        line-height: 1.5;
+      ">
+        ⚠️ <b>This will weaken your account security.</b> Confirm your password and a current code from your authenticator app.
+      </div>
+
+      <label>Account password</label>
+      <input id="disable-pwd" type="password" placeholder="Enter your password" autocomplete="current-password" />
+
+      <label>Authenticator code</label>
+      <input id="disable-code" maxlength="7" placeholder="123 456"
+        style="text-align:center; font-family: monospace; font-size: 20px; letter-spacing: 6px;" />
+
+      <div id="disable-msg" style="min-height: 18px; margin-bottom: 10px;"></div>
+
+      <button class="danger" style="width:100%" onclick="confirmDisable2FA()">
+        Disable 2FA
+      </button>
+    </div>
+  </div>
+</body>
+</html>

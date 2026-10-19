@@ -1,0 +1,104 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Dashboard — NovaWallet</title>
+<script src="/js/theme.js"></script>
+<link rel="stylesheet" href="/css/style.css" />
+</head>
+<body>
+  <div class="nav glass">
+  <div class="brand">
+    <div class="brand-logo">₮</div>
+    <span>Nova<span class="brand-accent">Wallet</span></span>
+  </div>
+      <div class="nav-links">
+      <a href="/dashboard.html" class="nav-link active">Dashboard</a>
+      <a href="/portfolio.html" class="nav-link">Portfolio</a>
+      <a href="/orders.html" class="nav-link">Trade</a>
+      <a href="/staking.html" class="nav-link">Stake</a>
+      <a href="/swap.html" class="nav-link">Swap</a>
+      <a href="/wallet.html" class="nav-link">Wallet</a>
+      <a href="/networks.html" class="nav-link">Networks</a>
+      <a href="/referrals.html" class="nav-link">Refer</a>
+      <a href="/profile.html" class="nav-link">Profile</a>
+      <div class="theme-toggle" data-action="toggle-theme" title="Toggle theme">🌓</div>
+      <a href="#" data-action="logout" class="nav-link">Logout</a>
+    </div>
+</div>
+
+  <div class="container">
+    <div id="banner-slot"></div>
+
+    <h2>Overview</h2>
+
+    <div class="grid grid-3" id="balances">
+      <div class="card">
+        <h3>USDT Balance</h3>
+        <div class="balance" id="usdt" data-value="0">0.00</div>
+      </div>
+      <div class="card">
+        <h3>BTC Balance</h3>
+        <div class="balance" id="btc" data-value="0">0.0000</div>
+      </div>
+      <div class="card">
+        <h3>ETH Balance</h3>
+        <div class="balance" id="eth" data-value="0">0.0000</div>
+      </div>
+    </div>
+
+    <div class="card">
+      <h3>Wallet Address</h3>
+      <div style="display:flex; align-items:center; gap:12px; flex-wrap:wrap;">
+        <p id="addr" style="font-family: 'JetBrains Mono', monospace; word-break: break-all; font-size: 13px; color: var(--text-dim); flex:1; min-width: 220px;">Loading…</p>
+        <button class="secondary sm" onclick="copyAddress()">Copy</button>
+      </div>
+    </div>
+
+    <div class="grid grid-2">
+      <div class="card">
+        <h3>Quick Actions</h3>
+        <div style="display:flex; gap:10px; flex-wrap:wrap; margin-top:8px;">
+          <a class="btn" href="/wallet.html">Deposit</a>
+          <a class="btn secondary" href="/wallet.html">Withdraw</a>
+          <a class="btn secondary" href="/staking.html">Stake USDT</a>
+          <a class="btn secondary" href="/swap.html">Swap</a>
+        </div>
+      </div>
+
+      <div class="card">
+        <h3>Account Status</h3>
+        <div class="row">
+          <div class="row-label">KYC level</div>
+          <div id="kyc-status" class="row-sub">Loading…</div>
+        </div>
+        <div class="row">
+          <div class="row-label">2FA</div>
+          <div id="twofa-status" class="row-sub">Loading…</div>
+        </div>
+        <div class="row">
+          <div class="row-label">Member since</div>
+          <div id="member-since" class="row-sub">—</div>
+        </div>
+      </div>
+    </div>
+
+    <div class="card">
+      <h3>Recent Activity</h3>
+      <div id="txs">
+        <div class="skeleton skeleton-row"></div>
+        <div class="skeleton skeleton-row"></div>
+        <div class="skeleton skeleton-row"></div>
+        <div class="skeleton skeleton-row"></div>
+      </div>
+    </div>
+  </div>
+
+  <script src="/js/ui.js"></script>
+  <script src="/js/auth.js"></script>
+  <script src="/js/prices.js"></script>
+  <script src="/js/notifications.js"></script>
+  <script src="/js/dashboard.js"></script>
+</body>
+</html>

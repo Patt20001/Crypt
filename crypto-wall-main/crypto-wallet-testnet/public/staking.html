@@ -1,0 +1,57 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Staking — TestWallet</title>
+<script src="/js/theme.js"></script>
+<link rel="stylesheet" href="/css/style.css" />
+</head>
+<body>
+  <div class="nav glass">
+  <div class="brand">
+    <div class="brand-logo">₮</div>
+    <span>Nova<span class="brand-accent">Wallet</span></span>
+  </div>
+  <div class="nav-links">
+    <a href="/dashboard.html" class="nav-link">Dashboard</a>
+    <a href="/staking.html" class="nav-link">Stake</a>
+    <a href="/swap.html" class="nav-link">Swap</a>
+    <a href="/wallet.html" class="nav-link">Wallet</a>
+    <a href="/networks.html" class="nav-link">Networks</a>
+    <a href="/profile.html" class="nav-link">Profile</a>
+    <div class="theme-toggle" data-action="toggle-theme" title="Toggle theme">🌓</div>
+    <a href="#" data-action="logout" class="nav-link">Logout</a>
+  </div>
+</div>
+
+  <div class="container">
+    <h2>USDT Staking</h2>
+    <p class="tag" style="margin-bottom: 22px;">Lock your USDT and earn passive yield with institutional-grade plans.</p>
+
+    <div class="card">
+      <h3>Choose a plan</h3>
+      <div class="grid grid-3" id="plans" style="margin-top: 12px;"></div>
+    </div>
+
+    <div class="card">
+      <h3>Stake amount</h3>
+      <label>Amount (USDT)</label>
+      <input id="stake-amount" type="number" placeholder="100" min="1" />
+      <p class="tag" style="margin-top: -6px; margin-bottom: 14px;">Available: <span id="avail">0.00</span> USDT</p>
+      <button onclick="createStake()">Stake Now</button>
+    </div>
+
+    <div class="card">
+      <h3>My positions</h3>
+      <div id="stakes"></div>
+    </div>
+  </div>
+
+  <script src="/js/ui.js"></script>
+  <script src="/js/auth.js"></script>
+  <script src="/js/prices.js"></script>
+  <script src="/js/notifications.js"></script>
+  <script src="/js/staking.js"></script>
+</body>
+</html>
