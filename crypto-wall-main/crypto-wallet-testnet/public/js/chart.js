@@ -1,21 +1,31 @@
 /* ============================================================
-   NovaWallet — Live candlestick chart (Binance)
-   Uses Lightweight Charts v5 + Binance public WebSocket
+   NovaWallet — Live candlestick chart (v5 API)
+   Uses Lightweight Charts v5 (self-hosted) + exchange WebSocket
+   Pair-switching safe: generation counter kills stale streams
+   No globals clash with orders.js
    ============================================================ */
 
 let binanceWs = null;
 let candleChart = null;
 let candleSeries = null;
-let currentSymbol = 'BTCUSDT';
+let currentSymbol = 'btcusdt';
+let currentBybitSymbol = 'BTCUSDT';
+let currentPairForLabel = 'BTC/USDT';
 let lastPriceUpdate = 0;
+
+// Increments on every pair switch. Any WS/interval that doesn't
+// match this value is stale and must not touch the chart.
+let chartStreamGen = 0;
 
 /* ---------------- HELPERS ---------------- */
 function toBinanceSymbol(pair) {
-  // 'BTC/USDT' -> 'btcusdt' (lowercase, no slash — what Binance WS expects)
-  return pair.replace('/', '').toLowerCase();
+  return pair.replace('/', '').toLowerCase();     // BTC/USDT -> btcusdt
+}
+function toBybitSymbol(pair) {
+  return pair.replace('/', '').toUpperCase();     // BTC/USDT -> BTCUSDT
 }
 
-/* ---------------- CHART INIT ---------------- */
+/* ---------------- CHART INIT (v5 API) ---------------- */
 function initCandleChart() {
   const container = document.getElementById('candle-chart');
   if (!container) {
@@ -23,12 +33,11 @@ function initCandleChart() {
     return false;
   }
   if (typeof LightweightCharts === 'undefined') {
-    console.warn('Lightweight Charts library not loaded');
-    container.innerHTML = '<div class="empty">Chart library failed to load</div>';
+    console.warn('Lightweight Charts not loaded — check /js/lightweight-charts.js');
+    container.innerHTML = '<div class="empty" style="padding:20px;">Chart library not loaded</div>';
     return false;
   }
 
-  // Destroy previous chart if it exists
   if (candleChart) {
     candleChart.remove();
     candleChart = null;
@@ -38,10 +47,7 @@ function initCandleChart() {
   candleChart = LightweightCharts.createChart(container, {
     width: container.clientWidth,
     height: 380,
-    layout: {
-      background: { color: 'transparent' },
-      textColor: '#94a3b8'
-    },
+    layout: { background: { color: 'transparent' }, textColor: '#94a3b8' },
     grid: {
       vertLines: { color: 'rgba(148,163,184,0.08)' },
       horzLines: { color: 'rgba(148,163,184,0.08)' }
@@ -75,67 +81,127 @@ function initCandleChart() {
 
 /* ---------------- HISTORICAL CANDLES ---------------- */
 async function loadHistoricalCandles(pair) {
-  const symbol = toBinanceSymbol(pair).toUpperCase();
+  const symbol = pair.replace('/', '').toUpperCase();
+  const myGen = chartStreamGen;   // capture generation at call time
 
-  try {
-    const res = await fetch(
-      `https://api.binance.com/api/v3/klines?symbol=${symbol}&interval=1m&limit=100`
-    );
-    if (!res.ok) {
-      // HTTP 451 = geo-blocked
-      if (res.status === 451) {
-        throw new Error('Binance is blocked in your region (HTTP 451)');
+  const attempts = [
+    {
+      name: 'binance',
+      url: `https://api.binance.com/api/v3/klines?symbol=${symbol}&interval=1m&limit=100`,
+      parse: (data) => data.map(k => ({
+        time: Math.floor(k[0] / 1000),
+        open: parseFloat(k[1]),
+        high: parseFloat(k[2]),
+        low: parseFloat(k[3]),
+        close: parseFloat(k[4])
+      }))
+    },
+    {
+      name: 'bybit',
+      url: `https://api.bybit.com/v5/market/kline?category=spot&symbol=${symbol}&interval=1&limit=100`,
+      parse: (json) => {
+        if (json.retCode !== 0) throw new Error(json.retMsg);
+        return json.result.list.slice().reverse().map(k => ({
+          time: Math.floor(parseInt(k[0]) / 1000),
+          open: parseFloat(k[1]),
+          high: parseFloat(k[2]),
+          low: parseFloat(k[3]),
+          close: parseFloat(k[4])
+        }));
       }
-      throw new Error(`HTTP ${res.status}`);
     }
-    const data = await res.json();
-    if (!Array.isArray(data) || !data.length) {
-      throw new Error('No candle data returned');
+  ];
+
+  for (const attempt of attempts) {
+    try {
+      const res = await fetch(attempt.url, { signal: AbortSignal.timeout(5000) });
+      if (!res.ok) continue;
+      const raw = await res.json();
+      const candles = attempt.parse(raw);
+      if (!candles || !candles.length) continue;
+
+      // Guard: user may have switched while we were fetching
+      if (myGen !== chartStreamGen) {
+        console.log(`Discarding stale candles for ${pair}`);
+        return;
+      }
+
+      if (candleSeries) {
+        candleSeries.setData(candles);
+        candleChart.timeScale().fitContent();
+      }
+      const latest = candles[candles.length - 1];
+      if (latest) updatePriceDisplay(latest.close, pair);
+
+      console.log(`Candles loaded from ${attempt.name} for ${pair}`);
+      return;
+    } catch (e) {
+      console.warn(`${attempt.name} candles failed:`, e.message);
     }
-
-    const candles = data.map(k => ({
-      time: Math.floor(k[0] / 1000),
-      open: parseFloat(k[1]),
-      high: parseFloat(k[2]),
-      low: parseFloat(k[3]),
-      close: parseFloat(k[4])
-    }));
-
-    if (candleSeries) {
-      candleSeries.setData(candles);
-      candleChart.timeScale().fitContent();
-    }
-
-    const latest = candles[candles.length - 1];
-    if (latest) updatePriceDisplay(latest.close, pair);
-  } catch (e) {
-    console.error('Failed to load historical candles:', e);
-    toast(`Chart error: ${e.message}`, 'warn', 5000);
   }
+
+  console.error('All candle sources failed');
+  toast('Chart data unavailable', 'warn', 3000);
 }
 
 /* ---------------- LIVE STREAM ---------------- */
-function startLiveStream(pair) {
-  currentSymbol = toBinanceSymbol(pair);
-  const bybitSymbol = pair.replace('/', '').toUpperCase(); // BTC/USDT -> BTCUSDT
+async function startLiveStream(pair) {
+  // Bump generation — any previous stream is now stale
+  chartStreamGen++;
+  const myGen = chartStreamGen;
 
-  // Close any existing stream
+  currentSymbol = toBinanceSymbol(pair);
+  currentBybitSymbol = toBybitSymbol(pair);
+  currentPairForLabel = pair;
+
+  // Close existing socket & null its handlers (prevents stray callbacks)
   if (binanceWs) {
-    try { binanceWs.close(); } catch {}
+    try {
+      binanceWs.onopen = null;
+      binanceWs.onmessage = null;
+      binanceWs.onerror = null;
+      binanceWs.onclose = null;
+      binanceWs.close();
+    } catch {}
     binanceWs = null;
   }
 
-  // ---- Try Binance WebSocket first ----
-  const binanceUrl = `wss://stream.binance.com:9443/ws/${currentSymbol}@kline_1m`;
-  let binanceFailed = false;
+  // Ask server which exchange works
+  let exchange = 'binance';
+  try {
+    const h = await fetch('/api/orders/health').then(r => r.json());
+    exchange = h.exchange || 'binance';
+  } catch (e) {
+    console.warn('Health check failed, defaulting to binance');
+  }
 
-  binanceWs = new WebSocket(binanceUrl);
+  // Guard: user may have switched while we waited for health
+  if (myGen !== chartStreamGen) {
+    console.log('Aborting stale stream start');
+    return;
+  }
 
-  binanceWs.onopen = () => {
-    console.log('Binance WS connected for', currentSymbol);
-  };
+  console.log(`Live stream via: ${exchange} for ${pair}`);
 
-  binanceWs.onmessage = (event) => {
+  if (exchange === 'bybit' || exchange === 'coingecko') {
+    startBybitStream(myGen);
+  } else if (exchange === 'fallback') {
+    startSimulatedStream(myGen);
+  } else {
+    startBinanceStream(myGen);
+  }
+}
+
+function startBinanceStream(myGen) {
+  const url = `wss://stream.binance.com:9443/ws/${currentSymbol}@kline_1m`;
+  let failed = false;
+  const ws = new WebSocket(url);
+  binanceWs = ws;
+
+  ws.onopen = () => console.log('Binance WS connected');
+
+  ws.onmessage = (event) => {
+    if (myGen !== chartStreamGen) return;   // stale → ignore
     try {
       const data = JSON.parse(event.data);
       if (!data.k) return;
@@ -148,59 +214,50 @@ function startLiveStream(pair) {
         low: parseFloat(data.k.l),
         close: parseFloat(data.k.c)
       };
-
       if (candleSeries) candleSeries.update(candle);
 
       const now = Date.now();
       if (now - lastPriceUpdate > 500) {
         lastPriceUpdate = now;
-        updatePriceDisplay(candle.close, pair);
+        updatePriceDisplay(candle.close, currentPairForLabel);
       }
-    } catch (err) { /* ignore */ }
+    } catch {}
   };
 
-  binanceWs.onerror = () => {
-    // Don't show a toast — silently fall back to Bybit
-    if (binanceFailed) return;
-    binanceFailed = true;
-    console.warn('Binance WS failed — falling back to Bybit');
-    startBybitStream(bybitSymbol, pair);
-  };
-
-  binanceWs.onclose = () => {
-    // Only fall back if we never got a successful message
-    if (!binanceFailed && (!binanceWs || binanceWs.readyState === WebSocket.CLOSED)) {
-      // Only fall back if we haven't already
-      if (!window.__bybitWsActive) {
-        binanceFailed = true;
-        startBybitStream(bybitSymbol, pair);
-      }
-    }
+  ws.onerror = () => {
+    if (myGen !== chartStreamGen) return;   // stale → don't fall back
+    if (failed) return;
+    failed = true;
+    console.warn('Binance WS failed — trying Bybit');
+    startBybitStream(myGen);
   };
 }
 
-/* ============================================================
-   Bybit WebSocket fallback
-   ============================================================ */
-function startBybitStream(symbol, pair) {
+function startBybitStream(myGen) {
   if (binanceWs) {
-    try { binanceWs.close(); } catch {}
+    try {
+      binanceWs.onopen = null;
+      binanceWs.onmessage = null;
+      binanceWs.onerror = null;
+      binanceWs.onclose = null;
+      binanceWs.close();
+    } catch {}
     binanceWs = null;
   }
 
   const ws = new WebSocket('wss://stream.bybit.com/v5/public/spot');
   binanceWs = ws;
-  window.__bybitWsActive = true;
 
   ws.onopen = () => {
-    console.log('Bybit WS connected for', symbol);
+    console.log('Bybit WS connected for', currentBybitSymbol);
     ws.send(JSON.stringify({
       op: 'subscribe',
-      args: [`kline.1.${symbol}`]
+      args: [`kline.1.${currentBybitSymbol}`]
     }));
   };
 
   ws.onmessage = (event) => {
+    if (myGen !== chartStreamGen) return;   // stale → ignore
     try {
       const data = JSON.parse(event.data);
       if (!data.topic || !data.topic.startsWith('kline.')) return;
@@ -214,25 +271,45 @@ function startBybitStream(symbol, pair) {
         low: parseFloat(k.low),
         close: parseFloat(k.close)
       };
-
       if (candleSeries) candleSeries.update(candle);
 
       const now = Date.now();
       if (now - lastPriceUpdate > 500) {
         lastPriceUpdate = now;
-        updatePriceDisplay(candle.close, pair);
+        updatePriceDisplay(candle.close, currentPairForLabel);
       }
-    } catch (err) { /* ignore */ }
+    } catch {}
   };
 
   ws.onerror = () => {
-    console.warn('Bybit WS also failed — chart will show historical only');
+    if (myGen !== chartStreamGen) return;
+    console.warn('Bybit WS failed');
   };
+}
 
-  ws.onclose = () => {
-    window.__bybitWsActive = false;
-    console.log('Bybit WS closed');
-  };
+function startSimulatedStream(myGen) {
+  console.warn('Running simulated drift (no exchange reachable)');
+  let price = window.__livePrice || 68000;
+
+  const handle = setInterval(() => {
+    if (myGen !== chartStreamGen) {
+      clearInterval(handle);   // stop when pair switches
+      return;
+    }
+    price = price * (1 + (Math.random() - 0.5) * 0.0005);
+    const bucket = Math.floor(Math.floor(Date.now() / 1000) / 60) * 60;
+
+    if (candleSeries) {
+      candleSeries.update({
+        time: bucket,
+        open: price,
+        high: price,
+        low: price,
+        close: price
+      });
+    }
+    updatePriceDisplay(price, currentPairForLabel);
+  }, 3000);
 }
 
 /* ---------------- PRICE DISPLAY ---------------- */
@@ -253,18 +330,18 @@ function updatePriceDisplay(price, pair) {
 
 /* ---------------- PUBLIC API ---------------- */
 window.initTradeChart = async function (pair) {
-    window.__bybitWsActive = false;
+  currentPairForLabel = pair;
   initCandleChart();
   await loadHistoricalCandles(pair);
-  startLiveStream(pair);
+  await startLiveStream(pair);
 };
 
 window.switchTradePair = async function (pair) {
-    window.__bybitWsActive = false;
+  currentPairForLabel = pair;
   if (!candleChart) {
     await window.initTradeChart(pair);
     return;
   }
   await loadHistoricalCandles(pair);
-  startLiveStream(pair);
+  await startLiveStream(pair);
 };

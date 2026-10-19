@@ -30,6 +30,7 @@ app.use('/api/notifications', require('./routes/notifications'));
 app.use('/api/referrals',     require('./routes/referrals'));
 app.use('/api/addresses',     require('./routes/addresses'));
 app.use('/api/portfolio',     require('./routes/portfolio'));
+app.use('/api/orders', require('./routes/orders'));
 
 app.get('/', (req, res) => res.sendFile(path.join(__dirname, 'public/index.html')));
 

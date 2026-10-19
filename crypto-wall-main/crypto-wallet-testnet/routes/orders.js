@@ -6,38 +6,71 @@ const { auth } = require('../middleware/auth');
 const { notify } = require('../middleware/notify');
 const router = express.Router();
 
-// In-memory cache so we don't hammer Binance on every request
+/* ============================================================
+   EXCHANGE HEALTH DETECTION
+   Picks one working exchange per server session.
+   ============================================================ */
+const exchangeState = {
+  name: null,
+  lastCheck: 0,
+  ttl: 60_000
+};
+
+async function detectExchange() {
+  if (exchangeState.name && Date.now() - exchangeState.lastCheck < exchangeState.ttl) {
+    return exchangeState.name;
+  }
+
+  const tests = [
+    { name: 'binance',   url: 'https://api.binance.com/api/v3/ticker/price?symbol=BTCUSDT' },
+    { name: 'bybit',     url: 'https://api.bybit.com/v5/market/tickers?category=spot&symbol=BTCUSDT' },
+    { name: 'coingecko', url: 'https://api.coingecko.com/api/v3/simple/price?ids=bitcoin&vs_currencies=usd' }
+  ];
+
+  for (const t of tests) {
+    try {
+      const res = await fetch(t.url, { signal: AbortSignal.timeout(3000) });
+      if (res.ok) {
+        if (exchangeState.name !== t.name) {
+          console.log(`✅ Market data source: ${t.name}`);
+        }
+        exchangeState.name = t.name;
+        exchangeState.lastCheck = Date.now();
+        return t.name;
+      }
+    } catch (e) {}
+  }
+
+  if (exchangeState.name !== 'fallback') {
+    console.log('⚠️ No exchange reachable — using cached fallback prices');
+  }
+  exchangeState.name = 'fallback';
+  exchangeState.lastCheck = Date.now();
+  return 'fallback';
+}
+
+/* ============================================================
+   PRICE CACHE
+   ============================================================ */
 const priceCache = {
   'BTC/USDT': { price: 68000, ts: 0 },
   'ETH/USDT': { price: 3500,  ts: 0 }
 };
-const CACHE_TTL = 3000; // 3 seconds
-let binanceBlocked = false; // once we detect 451, skip Binance for this session
-let bybitBlocked = false;
-let coingeckoBlocked = false;
+const CACHE_TTL = 3000;
 
-/* ============================================================
-   Fetch live price from Binance
-   Falls back to Bybit if Binance is geo-blocked
-   ============================================================ */
 async function fetchLivePrice(pair) {
   const cache = priceCache[pair];
   if (cache && Date.now() - cache.ts < CACHE_TTL && cache.ts > 0) return cache.price;
 
   const symbol = pair.replace('/', '').toUpperCase();
+  const exchange = await detectExchange();
 
-  // ============================================================
-  // 1. Try Binance (unless already known blocked)
-  // ============================================================
-  if (!binanceBlocked) {
-    try {
+  try {
+    if (exchange === 'binance') {
       const res = await fetch(
         `https://api.binance.com/api/v3/ticker/price?symbol=${symbol}`
       );
-      if (res.status === 451) {
-        binanceBlocked = true;
-        console.log('⚠️ Binance geo-blocked — trying Bybit');
-      } else if (res.ok) {
+      if (res.ok) {
         const json = await res.json();
         const price = parseFloat(json.price);
         if (price) {
@@ -45,23 +78,11 @@ async function fetchLivePrice(pair) {
           return price;
         }
       }
-    } catch (e) {
-      console.warn(`Binance fetch error for ${pair}:`, e.message);
-    }
-  }
-
-  // ============================================================
-  // 2. Try Bybit (unless already known blocked)
-  // ============================================================
-  if (!bybitBlocked) {
-    try {
+    } else if (exchange === 'bybit') {
       const res = await fetch(
         `https://api.bybit.com/v5/market/tickers?category=spot&symbol=${symbol}`
       );
-      if (res.status === 451 || res.status === 403) {
-        bybitBlocked = true;
-        console.log('⚠️ Bybit blocked too — trying CoinGecko');
-      } else if (res.ok) {
+      if (res.ok) {
         const json = await res.json();
         const price = parseFloat(json.result?.list?.[0]?.lastPrice);
         if (price) {
@@ -69,16 +90,7 @@ async function fetchLivePrice(pair) {
           return price;
         }
       }
-    } catch (e) {
-      console.warn(`Bybit fetch error for ${pair}:`, e.message);
-    }
-  }
-
-  // ============================================================
-  // 3. Try CoinGecko (unless already known blocked)
-  // ============================================================
-  if (!coingeckoBlocked) {
-    try {
+    } else if (exchange === 'coingecko') {
       const coinId = pair.startsWith('BTC') ? 'bitcoin'
                    : pair.startsWith('ETH') ? 'ethereum'
                    : null;
@@ -86,10 +98,7 @@ async function fetchLivePrice(pair) {
         const res = await fetch(
           `https://api.coingecko.com/api/v3/simple/price?ids=${coinId}&vs_currencies=usd`
         );
-        if (res.status === 429) {
-          // Rate limited — not permanently blocked
-          console.warn(`CoinGecko rate-limited for ${pair}`);
-        } else if (res.ok) {
+        if (res.ok) {
           const json = await res.json();
           const price = json[coinId]?.usd;
           if (price) {
@@ -98,20 +107,14 @@ async function fetchLivePrice(pair) {
           }
         }
       }
-    } catch (e) {
-      console.warn(`CoinGecko fetch error for ${pair}:`, e.message);
     }
+  } catch (e) {
+    console.warn(`fetchLivePrice (${exchange}) failed for ${pair}:`, e.message);
   }
 
-  // ============================================================
-  // 4. Final fallback: last cached price or hardcoded seed
-  // ============================================================
   return cache?.price || (pair === 'BTC/USDT' ? 68000 : 3500);
 }
 
-/* ============================================================
-   Build a simulated order book around the live mid price
-   ============================================================ */
 async function buildOrderBook(pair) {
   const mid = await fetchLivePrice(pair);
   if (!mid) return null;
@@ -144,7 +147,19 @@ async function buildOrderBook(pair) {
 }
 
 /* ============================================================
-   GET /api/orders/book/:pair — order book
+   HEALTH ENDPOINT (public — no auth, so curl works)
+   ============================================================ */
+router.get('/health', async (req, res) => {
+  try {
+    const exchange = await detectExchange();
+    res.json({ exchange });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+/* ============================================================
+   ORDER BOOK
    ============================================================ */
 router.get('/book/:pair', auth, async (req, res) => {
   try {
@@ -158,7 +173,7 @@ router.get('/book/:pair', auth, async (req, res) => {
 });
 
 /* ============================================================
-   GET /api/orders/trades/:pair — recent trades (simulated)
+   RECENT TRADES
    ============================================================ */
 router.get('/trades/:pair', auth, async (req, res) => {
   try {
@@ -187,7 +202,7 @@ router.get('/trades/:pair', auth, async (req, res) => {
 });
 
 /* ============================================================
-   GET /api/orders/my — my orders
+   MY ORDERS
    ============================================================ */
 router.get('/my', auth, async (req, res) => {
   const orders = await Order.find({ user: req.user._id })
@@ -197,7 +212,7 @@ router.get('/my', auth, async (req, res) => {
 });
 
 /* ============================================================
-   POST /api/orders — place an order
+   PLACE ORDER
    ============================================================ */
 router.post('/', auth, async (req, res) => {
   try {
@@ -218,7 +233,6 @@ router.post('/', auth, async (req, res) => {
     const [base, quote] = pair.split('/');
     const user = await User.findById(req.user._id);
 
-    // Balance checks & locking
     if (side === 'buy') {
       const cost = p * amt;
       if (user.balances[quote] < cost)
@@ -237,7 +251,6 @@ router.post('/', auth, async (req, res) => {
       user: user._id, side, pair, type, price: p, amount: amt
     });
 
-    // Auto-fill if price is within 0.3% of market
     const diff = Math.abs(p - mid) / mid;
     if (diff < 0.003) {
       setTimeout(() => tryFillOrder(order._id).catch(() => {}), 3000);
@@ -256,7 +269,7 @@ router.post('/', auth, async (req, res) => {
 });
 
 /* ============================================================
-   POST /api/orders/:id/cancel — cancel an order
+   CANCEL ORDER
    ============================================================ */
 router.post('/:id/cancel', auth, async (req, res) => {
   try {
@@ -295,7 +308,7 @@ router.post('/:id/cancel', auth, async (req, res) => {
 });
 
 /* ============================================================
-   tryFillOrder — internal helper to fill an order
+   FILL ORDER (internal)
    ============================================================ */
 async function tryFillOrder(orderId) {
   const order = await Order.findById(orderId);
