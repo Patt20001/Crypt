@@ -68,6 +68,7 @@ const PRIMARY_LINKS = [
   { href: '/dashboard.html', icon: '📊', label: 'Dashboard', key: 'dashboard' },
   { href: '/portfolio.html', icon: '📈', label: 'Portfolio', key: 'portfolio' },
   { href: '/orders.html',    icon: '💹', label: 'Trade',     key: 'orders' },
+  { href: '/copy.html',      icon: '👥', label: 'Copy',      key: 'copy' },
   { href: '/staking.html',   icon: '🌱', label: 'Stake',     key: 'staking' },
   { href: '/swap.html',      icon: '🔄', label: 'Swap',      key: 'swap' },
   { href: '/wallet.html',    icon: '👛', label: 'Wallet',    key: 'wallet' }

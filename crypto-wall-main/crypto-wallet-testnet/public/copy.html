@@ -1,0 +1,54 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Copy Trading — NovaWallet</title>
+<script src="/js/theme.js"></script>
+<link rel="stylesheet" href="/css/style.css" />
+</head>
+<body>
+  <div class="nav glass">
+    <div class="brand"><div class="brand-logo">₮</div><span>Nova<span class="brand-accent">Wallet</span></span></div>
+    <div class="nav-links">
+      <a href="/dashboard.html" class="nav-link">Dashboard</a>
+      <a href="/portfolio.html" class="nav-link">Portfolio</a>
+      <a href="/orders.html" class="nav-link">Trade</a>
+      <a href="/copy.html" class="nav-link active">Copy</a>
+      <a href="/staking.html" class="nav-link">Stake</a>
+      <a href="/wallet.html" class="nav-link">Wallet</a>
+      <a href="/profile.html" class="nav-link">Profile</a>
+      <div class="theme-toggle" data-action="toggle-theme">🌓</div>
+      <a href="#" data-action="logout" class="nav-link">Logout</a>
+    </div>
+  </div>
+
+  <div class="container">
+    <h2>Copy Trading</h2>
+    <p class="tag" style="margin-bottom: 20px;">Follow top traders. Their positions mirror into your account automatically.</p>
+
+    <div class="card">
+      <h3>My Active Copies</h3>
+      <div id="my-copies"></div>
+    </div>
+
+    <h3 style="margin: 24px 0 12px;">Featured Traders</h3>
+    <div class="grid grid-2" id="traders"></div>
+  </div>
+
+  <div class="modal" id="follow-modal">
+    <div class="modal-inner glass">
+      <div class="modal-head">
+        <h3 id="follow-title">Follow Trader</h3>
+        <button class="modal-close" onclick="closeModal('follow-modal')">×</button>
+      </div>
+      <div id="follow-body"></div>
+    </div>
+  </div>
+
+  <script src="/js/ui.js"></script>
+  <script src="/js/auth.js"></script>
+  <script src="/js/notifications.js"></script>
+  <script src="/js/copy.js"></script>
+</body>
+</html>

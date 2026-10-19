@@ -8,22 +8,24 @@
 <link rel="stylesheet" href="/css/style.css" />
 </head>
 <body>
- <div class="nav glass">
-  <div class="brand">
-    <div class="brand-logo">₮</div>
-    <span>Nova<span class="brand-accent">Wallet</span></span>
+  <div class="nav glass">
+    <div class="brand">
+      <div class="brand-logo">₮</div>
+      <span>Nova<span class="brand-accent">Wallet</span></span>
+    </div>
+    <div class="nav-links">
+      <a href="/dashboard.html" class="nav-link">Dashboard</a>
+      <a href="/portfolio.html" class="nav-link">Portfolio</a>
+      <a href="/orders.html" class="nav-link">Trade</a>
+      <a href="/copy.html" class="nav-link">Copy</a>
+      <a href="/staking.html" class="nav-link">Stake</a>
+      <a href="/swap.html" class="nav-link">Swap</a>
+      <a href="/wallet.html" class="nav-link">Wallet</a>
+      <a href="/profile.html" class="nav-link">Profile</a>
+      <div class="theme-toggle" data-action="toggle-theme" title="Toggle theme">🌓</div>
+      <a href="#" data-action="logout" class="nav-link">Logout</a>
+    </div>
   </div>
-  <div class="nav-links">
-    <a href="/dashboard.html" class="nav-link">Dashboard</a>
-    <a href="/staking.html" class="nav-link">Stake</a>
-    <a href="/swap.html" class="nav-link">Swap</a>
-    <a href="/wallet.html" class="nav-link">Wallet</a>
-    <a href="/networks.html" class="nav-link">Networks</a>
-    <a href="/profile.html" class="nav-link">Profile</a>
-    <div class="theme-toggle" data-action="toggle-theme" title="Toggle theme">🌓</div>
-    <a href="#" data-action="logout" class="nav-link">Logout</a>
-  </div>
-</div>
 
   <div class="container">
     <h2>Admin Dashboard</h2>
@@ -41,6 +43,13 @@
     </div>
 
     <div class="card">
+      <h3>Copy Trading</h3>
+      <p class="tag" style="margin-bottom: 14px;">Seed demo traders for the copy trading feature.</p>
+      <button class="secondary sm" onclick="seedCopyTraders()">Seed Demo Traders</button>
+      <div id="seed-copy-result" style="margin-top: 12px;"></div>
+    </div>
+
+    <div class="card">
       <h3>Broadcast Banner</h3>
       <label>Message shown to all users</label>
       <input id="banner-msg" placeholder="e.g. Scheduled maintenance at 20:00 UTC" />
@@ -49,15 +58,16 @@
         <span style="font-size:13px; color: var(--text-dim);">Activate banner</span>
       </label>
       <button onclick="saveBanner()">Publish</button>
+
       <div class="row" style="margin-top: 20px; padding-top: 16px; border-top: 1px solid var(--border);">
-  <div>
-    <div class="row-label">Maintenance mode</div>
-    <div class="row-sub">Blocks all API calls except auth, admin, and settings</div>
-  </div>
-  <div class="switch" id="maintenance-switch"></div>
-</div>
-<label style="margin-top: 12px;">Maintenance message</label>
-<input id="maintenance-msg" placeholder="We are upgrading. Back in 15 minutes." />
+        <div>
+          <div class="row-label">Maintenance mode</div>
+          <div class="row-sub">Blocks all API calls except auth, admin, and settings</div>
+        </div>
+        <div class="switch" id="maintenance-switch"></div>
+      </div>
+      <label style="margin-top: 12px;">Maintenance message</label>
+      <input id="maintenance-msg" placeholder="We are upgrading. Back in 15 minutes." />
     </div>
 
     <div class="card">
@@ -83,7 +93,6 @@
 
   <script src="/js/ui.js"></script>
   <script src="/js/auth.js"></script>
-  <script src="/js/prices.js"></script>
   <script src="/js/notifications.js"></script>
   <script src="/js/admin.js"></script>
 </body>

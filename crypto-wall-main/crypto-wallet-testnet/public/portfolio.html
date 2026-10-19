@@ -23,7 +23,7 @@
     </div>
   </div>
 
-  <div class="container">
+    <div class="container">
     <h2>Portfolio</h2>
 
     <div class="card">
@@ -31,12 +31,32 @@
       <div class="balance" id="total" style="font-size: 42px;">$0.00</div>
     </div>
 
+    <div class="grid grid-3">
+      <div class="card">
+        <h3>Realized PnL</h3>
+        <div class="balance" id="pnl-realized" style="font-size: 22px;">$0.00</div>
+      </div>
+      <div class="card">
+        <h3>Unrealized PnL</h3>
+        <div class="balance" id="pnl-unrealized" style="font-size: 22px;">$0.00</div>
+      </div>
+      <div class="card">
+        <h3>Total PnL</h3>
+        <div class="balance" id="pnl-total" style="font-size: 22px;">$0.00</div>
+      </div>
+    </div>
+
     <div class="card">
       <h3>Last 30 days</h3>
       <svg id="chart" style="width:100%; height: 240px; display:block;"></svg>
     </div>
 
-    <h3 style="margin-top: 24px; margin-bottom: 12px; color: var(--text-mute); font-size: 11px; text-transform: uppercase; letter-spacing: 0.09em;">Holdings</h3>
+    <div class="card">
+      <h3>Open Positions</h3>
+      <div id="positions"></div>
+    </div>
+
+    <h3 style="margin-top: 24px; margin-bottom: 12px;">Holdings</h3>
     <div class="grid grid-3" id="holdings"></div>
   </div>
 

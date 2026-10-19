@@ -16,15 +16,25 @@ const userSchema = new mongoose.Schema({
     filename: String, url: String, mimetype: String, size: Number,
     uploadedAt: { type: Date, default: Date.now }
   }],
-  balances: {
+    balances: {
     USDT: { type: Number, default: 0 },
     BTC:  { type: Number, default: 0 },
-    ETH:  { type: Number, default: 0 }
+    ETH:  { type: Number, default: 0 },
+    SOL:  { type: Number, default: 0 },
+    BNB:  { type: Number, default: 0 },
+    XRP:  { type: Number, default: 0 },
+    ADA:  { type: Number, default: 0 },
+    DOGE: { type: Number, default: 0 }
   },
   locked: {
     USDT: { type: Number, default: 0 },
     BTC:  { type: Number, default: 0 },
-    ETH:  { type: Number, default: 0 }
+    ETH:  { type: Number, default: 0 },
+    SOL:  { type: Number, default: 0 },
+    BNB:  { type: Number, default: 0 },
+    XRP:  { type: Number, default: 0 },
+    ADA:  { type: Number, default: 0 },
+    DOGE: { type: Number, default: 0 }
   },
   walletAddress: { type: String, default: () => 'T' + Math.random().toString(36).slice(2, 36).toUpperCase() },
   referralCode:  { type: String, unique: true, sparse: true },

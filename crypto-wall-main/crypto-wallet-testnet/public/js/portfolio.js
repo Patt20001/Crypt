@@ -4,8 +4,18 @@ if (user) document.addEventListener('DOMContentLoaded', load);
 async function load() {
   try {
     const p = await api('/api/portfolio');
-    document.getElementById('total').textContent = '$' + p.total.toLocaleString(undefined, { maximumFractionDigits: 2 });
+    document.getElementById('total').textContent = '$' + p.total.toLocaleString(undefined, {
+      maximumFractionDigits: 2
+    });
 
+    // PnL cards
+    const pnl = p.pnl || {};
+    document.getElementById('pnl-realized').textContent = formatMoney(pnl.realized);
+    document.getElementById('pnl-unrealized').textContent = formatMoney(pnl.unrealized);
+    document.getElementById('pnl-total').textContent = formatMoney(pnl.total);
+    document.getElementById('pnl-total').style.color = pnl.total >= 0 ? 'var(--accent)' : '#fca5a5';
+
+    // Holdings
     document.getElementById('holdings').innerHTML = p.holdings.map(h => `
       <div class="card">
         <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:10px;">
@@ -14,12 +24,45 @@ async function load() {
         </div>
         <div class="balance" style="font-size:22px;">$${h.usd.toLocaleString(undefined, { maximumFractionDigits: 2 })}</div>
         <div class="tag" style="margin-top:6px;">${h.amount.toFixed(h.symbol === 'USDT' ? 2 : 6)} ${h.symbol} @ $${h.price.toLocaleString()}</div>
-      </div>`).join('');
+      </div>`).join('') || '<div class="empty">No holdings</div>';
+
+    // Positions with PnL
+    if (pnl.positions && pnl.positions.length) {
+      document.getElementById('positions').innerHTML = `
+        <div class="table-wrap"><table>
+          <thead><tr>
+            <th>Pair</th><th>Amount</th><th>Avg Cost</th><th>Current</th>
+            <th>Unrealized</th><th>Realized</th>
+          </tr></thead>
+          <tbody>${pnl.positions.map(pos => `
+            <tr>
+              <td style="font-weight:600;">${pos.pair}</td>
+              <td>${pos.amount.toFixed(6)}</td>
+              <td>$${pos.avgCost.toFixed(2)}</td>
+              <td>$${pos.currentPrice.toFixed(2)}</td>
+              <td style="color: ${pos.unrealized >= 0 ? 'var(--accent)' : '#fca5a5'}; font-weight:600;">
+                ${formatMoney(pos.unrealized)} (${pos.unrealizedPct.toFixed(2)}%)
+              </td>
+              <td style="color: ${pos.realized >= 0 ? 'var(--accent)' : '#fca5a5'};">
+                ${formatMoney(pos.realized)}
+              </td>
+            </tr>`).join('')}
+          </tbody>
+        </table></div>`;
+    } else {
+      document.getElementById('positions').innerHTML = '<div class="empty">No open positions yet</div>';
+    }
 
     drawChart(p.history);
   } catch (e) {
     toast(e.message, 'error');
   }
+}
+
+function formatMoney(v) {
+  if (!v) return '$0.00';
+  const sign = v < 0 ? '-' : '';
+  return `${sign}$${Math.abs(v).toLocaleString(undefined, { maximumFractionDigits: 2 })}`;
 }
 
 function drawChart(history) {
@@ -53,7 +96,5 @@ function drawChart(history) {
     <path d="${pathD}" fill="none" stroke="#4ade80" stroke-width="2.5" stroke-linejoin="round" stroke-linecap="round"/>
     ${points.map(([x,y], i) => i === points.length - 1
       ? `<circle cx="${x}" cy="${y}" r="5" fill="#4ade80"/><circle cx="${x}" cy="${y}" r="10" fill="#4ade80" opacity=".25"/>`
-      : '').join('')}
-    <text x="${W-P}" y="${H-8}" text-anchor="end" fill="#64748b" font-size="11">${history[history.length-1].date}</text>
-    <text x="${P}" y="${H-8}" fill="#64748b" font-size="11">${history[0].date}</text>`;
+      : '').join('')}`;
 }

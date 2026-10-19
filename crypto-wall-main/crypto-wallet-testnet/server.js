@@ -5,6 +5,7 @@ const path = require('path');
 const rateLimit = require('express-rate-limit');
 const connectDB = require('./config/database');
 const maintenance = require('./middleware/maintenance');
+const marketSync = require('./middleware/marketSync');
 
 const app = express();
 connectDB();
@@ -30,9 +31,13 @@ app.use('/api/notifications', require('./routes/notifications'));
 app.use('/api/referrals',     require('./routes/referrals'));
 app.use('/api/addresses',     require('./routes/addresses'));
 app.use('/api/portfolio',     require('./routes/portfolio'));
-app.use('/api/orders', require('./routes/orders'));
+app.use('/api/orders',        require('./routes/orders'));
+app.use('/api/copy',          require('./routes/copy'));
 
 app.get('/', (req, res) => res.sendFile(path.join(__dirname, 'public/index.html')));
 
 const PORT = process.env.PORT || 3000;
-app.listen(PORT, () => console.log(`🚀 NovaWallet running on http://localhost:${PORT}`));
+app.listen(PORT, () => {
+  console.log(`🚀 NovaWallet running on http://localhost:${PORT}`);
+  marketSync.start();   // 👈 start conditional order scanner
+});

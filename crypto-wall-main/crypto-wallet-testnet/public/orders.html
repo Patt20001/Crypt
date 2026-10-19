@@ -31,7 +31,12 @@
     <div class="card" style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:12px;">
       <div style="display:flex; gap:8px; flex-wrap:wrap;">
         <div class="net-chip" data-pair="BTC/USDT" onclick="selectPair('BTC/USDT')">BTC / USDT</div>
-        <div class="net-chip" data-pair="ETH/USDT" onclick="selectPair('ETH/USDT')">ETH / USDT</div>
+<div class="net-chip" data-pair="ETH/USDT" onclick="selectPair('ETH/USDT')">ETH / USDT</div>
+<div class="net-chip" data-pair="SOL/USDT" onclick="selectPair('SOL/USDT')">SOL / USDT</div>
+<div class="net-chip" data-pair="BNB/USDT" onclick="selectPair('BNB/USDT')">BNB / USDT</div>
+<div class="net-chip" data-pair="XRP/USDT" onclick="selectPair('XRP/USDT')">XRP / USDT</div>
+<div class="net-chip" data-pair="ADA/USDT" onclick="selectPair('ADA/USDT')">ADA / USDT</div>
+<div class="net-chip" data-pair="DOGE/USDT" onclick="selectPair('DOGE/USDT')">DOGE / USDT</div>
       </div>
       <div style="text-align:right;">
         <div class="tag">Last price</div>
@@ -92,7 +97,20 @@
           <div class="row-sub" id="order-avail">—</div>
         </div>
 
-        <button style="width:100%; margin-top: 12px;" id="btn-submit" onclick="placeOrder()">Buy BTC</button>
+        <label>Order Type</label>
+<select id="order-type" onchange="updateOrderType()">
+  <option value="limit">Limit</option>
+  <option value="market">Market (instant fill)</option>
+  <option value="stop_loss">Stop-Loss</option>
+  <option value="take_profit">Take-Profit</option>
+</select>
+
+<div id="trigger-wrap" style="display:none;">
+  <label>Trigger Price</label>
+  <input id="trigger-price" type="number" step="0.01" placeholder="0.00" />
+</div>
+
+<button style="width:100%; margin-top: 12px;" id="btn-submit" onclick="placeOrder()">Buy BTC</button>
       </div>
     </div>
 

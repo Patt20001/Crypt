@@ -164,8 +164,18 @@ async function loadMyOrders() {
 window.placeOrder = async () => {
   const price = Number(document.getElementById('order-price').value);
   const amount = Number(document.getElementById('order-amount').value);
-  if (!price || price <= 0) return toast('Enter a valid price', 'warn');
-  if (!amount || amount <= 0) return toast('Enter a valid amount', 'warn');
+  const type = document.getElementById('order-type').value;
+  const triggerPrice = Number(document.getElementById('trigger-price')?.value);
+
+  if (type === 'market') {
+    if (!amount || amount <= 0) return toast('Enter a valid amount', 'warn');
+  } else if (type === 'stop_loss' || type === 'take_profit') {
+    if (!amount || amount <= 0) return toast('Enter a valid amount', 'warn');
+    if (!triggerPrice || triggerPrice <= 0) return toast('Enter a valid trigger price', 'warn');
+  } else {
+    if (!price || price <= 0) return toast('Enter a valid price', 'warn');
+    if (!amount || amount <= 0) return toast('Enter a valid amount', 'warn');
+  }
 
   const btn = document.getElementById('btn-submit');
   const label = btn.textContent;
@@ -175,7 +185,15 @@ window.placeOrder = async () => {
   try {
     await api('/api/orders', {
       method: 'POST',
-      body: JSON.stringify({ side: currentSide, pair: currentPair, type: 'limit', price, amount })
+      body: JSON.stringify({
+        side: currentSide,
+        pair: currentPair,
+        type,
+        price,
+        amount,
+        conditionalType: (type === 'stop_loss' || type === 'take_profit') ? type : '',
+        triggerPrice
+      })
     });
     toast('Order placed', 'success');
     document.getElementById('order-amount').value = '';
@@ -186,6 +204,28 @@ window.placeOrder = async () => {
   } finally {
     btn.disabled = false;
     btn.textContent = label;
+  }
+};
+
+window.updateOrderType = () => {
+  const type = document.getElementById('order-type').value;
+  const triggerWrap = document.getElementById('trigger-wrap');
+  const priceField = document.getElementById('order-price');
+
+  if (type === 'market') {
+    triggerWrap.style.display = 'none';
+    priceField.disabled = true;
+    priceField.value = '';
+    priceField.placeholder = 'Fills at market price';
+  } else if (type === 'stop_loss' || type === 'take_profit') {
+    triggerWrap.style.display = 'block';
+    priceField.disabled = true;
+    priceField.value = '';
+    priceField.placeholder = 'Auto-set from trigger';
+  } else {
+    triggerWrap.style.display = 'none';
+    priceField.disabled = false;
+    priceField.placeholder = '0.00';
   }
 };
 

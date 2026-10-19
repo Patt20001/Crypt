@@ -4,9 +4,7 @@ const snapSchema = new mongoose.Schema({
   user: { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true },
   date: { type: String, required: true },       // YYYY-MM-DD
   usdValue: { type: Number, required: true },
-  balances: {
-    USDT: Number, BTC: Number, ETH: Number
-  },
+  balances: { type: mongoose.Schema.Types.Mixed, default: {} },
   createdAt: { type: Date, default: Date.now }
 });
 

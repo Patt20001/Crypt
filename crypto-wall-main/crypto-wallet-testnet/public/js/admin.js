@@ -369,3 +369,20 @@ window.saveBanner = async () => {
     toast('Banner updated', 'success');
   } catch (e) { toast(e.message, 'error'); }
 };
+
+/* ============ COPY TRADING — SEED DEMO TRADERS ============ */
+window.seedCopyTraders = async () => {
+  const resultEl = document.getElementById('seed-copy-result');
+  if (resultEl) resultEl.innerHTML = '<p class="tag">Seeding…</p>';
+  try {
+    const r = await api('/api/copy/seed', { method: 'POST' });
+    if (resultEl) {
+      resultEl.innerHTML = `<p class="success">✅ ${r.message || 'Seeded'} · ${r.count || 0} traders created</p>`;
+    }
+    toast('Copy traders seeded', 'success');
+    refreshAll();
+  } catch (e) {
+    if (resultEl) resultEl.innerHTML = `<p class="error">❌ ${e.message}</p>`;
+    toast(e.message, 'error');
+  }
+};

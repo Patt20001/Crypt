@@ -3,7 +3,7 @@ const mongoose = require('mongoose');
 const txSchema = new mongoose.Schema({
   user:    { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true },
   type:    { type: String, enum: ['deposit', 'withdraw', 'earn'], required: true },
-  currency:{ type: String, enum: ['USDT', 'BTC', 'ETH'], default: 'USDT' },
+  currency: { type: String, default: 'USDT' },
   amount:  { type: Number, required: true },
   status:  { type: String, enum: ['pending', 'completed', 'rejected'], default: 'pending' },
   note:    { type: String, default: '' },

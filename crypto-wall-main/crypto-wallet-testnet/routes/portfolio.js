@@ -1,29 +1,39 @@
 const express = require('express');
 const PortfolioSnapshot = require('../models/PortfolioSnapshot');
 const User = require('../models/User');
+const Position = require('../models/Position');
 const { auth } = require('../middleware/auth');
 const router = express.Router();
 
-const PRICES = { USDT: 1, BTC: 68000, ETH: 3500 };
+const PRICES = { USDT: 1, BTC: 68000, ETH: 3500, SOL: 150, BNB: 600, XRP: 0.6, ADA: 0.5, DOGE: 0.15 };
 
-async function snapshotToday(user) {
+async function fetchPrices() {
+  try {
+    const res = await fetch(
+      'https://api.binance.com/api/v3/ticker/price?symbols=["BTCUSDT","ETHUSDT","SOLUSDT","BNBUSDT","XRPUSDT","ADAUSDT","DOGEUSDT"]',
+      { signal: AbortSignal.timeout(3000) }
+    );
+    if (res.ok) {
+      const arr = await res.json();
+      const m = {};
+      arr.forEach(x => {
+        const sym = x.symbol.replace('USDT', '');
+        m[sym] = parseFloat(x.price);
+      });
+      return { USDT: 1, ...m };
+    }
+  } catch {}
+  return PRICES;
+}
+
+async function snapshotToday(user, prices) {
   const today = new Date().toISOString().slice(0, 10);
-  const usd = (user.balances.USDT || 0) * PRICES.USDT
-            + (user.balances.BTC  || 0) * PRICES.BTC
-            + (user.balances.ETH  || 0) * PRICES.ETH;
+  const usd = Object.keys(prices).reduce((sum, sym) =>
+    sum + ((user.balances[sym] || 0) * prices[sym]), 0);
 
   await PortfolioSnapshot.findOneAndUpdate(
     { user: user._id, date: today },
-    {
-      user: user._id,
-      date: today,
-      usdValue: usd,
-      balances: {
-        USDT: user.balances.USDT,
-        BTC:  user.balances.BTC,
-        ETH:  user.balances.ETH
-      }
-    },
+    { user: user._id, date: today, usdValue: usd, balances: user.balances },
     { upsert: true, new: true }
   );
   return usd;
@@ -31,44 +41,67 @@ async function snapshotToday(user) {
 
 router.get('/', auth, async (req, res) => {
   const user = await User.findById(req.user._id);
-  const currentUsd = await snapshotToday(user);
+  const prices = await fetchPrices();
+  const currentUsd = await snapshotToday(user, prices);
 
-  // Seed 30 days of history if not enough
+  // Seed 30d history if sparse
   const existing = await PortfolioSnapshot.find({ user: user._id }).sort({ date: 1 });
   if (existing.length < 15) {
     const now = new Date();
-    const seed = [];
     for (let i = 29; i >= 0; i--) {
       const d = new Date(now); d.setDate(d.getDate() - i);
       const key = d.toISOString().slice(0, 10);
       const jitter = 1 + (Math.random() - 0.5) * 0.08;
-      const baseUsd = Math.max(1, currentUsd * 0.7) * jitter * (1 + (29 - i) * 0.01);
-      seed.push({ user: user._id, date: key, usdValue: baseUsd, balances: user.balances });
-    }
-    for (const s of seed) {
+      const base = Math.max(1, currentUsd * 0.7) * jitter * (1 + (29 - i) * 0.01);
       await PortfolioSnapshot.updateOne(
-        { user: user._id, date: s.date },
-        { $setOnInsert: s },
+        { user: user._id, date: key },
+        { $setOnInsert: { user: user._id, date: key, usdValue: base, balances: user.balances } },
         { upsert: true }
       );
     }
   }
 
   const history = await PortfolioSnapshot.find({ user: user._id }).sort({ date: 1 });
-  const prices = PRICES;
 
-  const holdings = [
-    { symbol: 'USDT', amount: user.balances.USDT, price: 1,                 usd: user.balances.USDT },
-    { symbol: 'BTC',  amount: user.balances.BTC,  price: prices.BTC,        usd: user.balances.BTC * prices.BTC },
-    { symbol: 'ETH',  amount: user.balances.ETH,  price: prices.ETH,        usd: user.balances.ETH * prices.ETH }
-  ];
+  const holdings = Object.keys(prices).map(sym => ({
+    symbol: sym,
+    amount: user.balances[sym] || 0,
+    price: prices[sym],
+    usd: (user.balances[sym] || 0) * prices[sym]
+  })).filter(h => h.amount > 0);
 
   const total = holdings.reduce((s, h) => s + h.usd, 0);
+  holdings.forEach(h => h.pct = total > 0 ? (h.usd / total) * 100 : 0);
+
+  // PnL — merge positions with live prices
+  const positions = await Position.find({ user: user._id });
+  const positionsWithPnl = positions.map(p => {
+    const currentPrice = prices[p.base] || p.avgCost;
+    const marketValue = p.amount * currentPrice;
+    const costBasis = p.amount * p.avgCost;
+    const unrealized = marketValue - costBasis;
+    const unrealizedPct = costBasis > 0 ? (unrealized / costBasis) * 100 : 0;
+    return {
+      pair: p.pair, base: p.base,
+      amount: p.amount, avgCost: p.avgCost, currentPrice,
+      marketValue, costBasis, unrealized, unrealizedPct,
+      realized: p.realized
+    };
+  });
+
+  const totalRealized = positions.reduce((s, p) => s + p.realized, 0);
+  const totalUnrealized = positionsWithPnl.reduce((s, p) => s + p.unrealized, 0);
 
   res.json({
     total,
-    holdings: holdings.map(h => ({ ...h, pct: total > 0 ? (h.usd / total) * 100 : 0 })),
-    history: history.map(s => ({ date: s.date, usd: s.usdValue }))
+    holdings,
+    history: history.map(s => ({ date: s.date, usd: s.usdValue })),
+    pnl: {
+      realized: totalRealized,
+      unrealized: totalUnrealized,
+      total: totalRealized + totalUnrealized,
+      positions: positionsWithPnl
+    }
   });
 });
 
