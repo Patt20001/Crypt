@@ -387,3 +387,87 @@ window.seedCopyTraders = async (force = false) => {
     toast(e.message, 'error');
   }
 };
+
+window.populateCopyTraders = async (count = 100) => {
+  const resultEl = document.getElementById('seed-copy-result');
+  if (resultEl) resultEl.innerHTML = `<p class="tag">Generating ${count} traders…</p>`;
+  try {
+    const r = await api(`/api/copy/populate?count=${count}`, { method: 'POST' });
+    if (resultEl) {
+      resultEl.innerHTML = `<p class="success">✅ ${r.message} · Total in database: ${r.total}</p>`;
+    }
+    toast(`${r.count} traders generated`, 'success');
+    refreshAll();
+  } catch (e) {
+    if (resultEl) resultEl.innerHTML = `<p class="error">❌ ${e.message}</p>`;
+    toast(e.message, 'error');
+  }
+};
+
+/* ============ COPY TRADING ACTIVITY ============ */
+async function loadCopyStats() {
+  const el = document.getElementById('copy-stats');
+  if (!el) return;
+  el.innerHTML = '<div class="skeleton skeleton-card"></div>'.repeat(3);
+  try {
+    const s = await api('/api/copy/admin/stats');
+    el.innerHTML = `
+      <div class="card"><h3>Active Copies</h3><div class="balance">${s.activeRelations}</div></div>
+      <div class="card"><h3>Total Allocated</h3><div class="balance">${s.totalAllocated.toFixed(2)}</div></div>
+      <div class="card"><h3>Total Traders</h3><div class="balance">${s.traders}</div></div>`;
+  } catch (e) { toast(e.message, 'error'); }
+}
+
+async function loadCopyRelations() {
+  const el = document.getElementById('copy-relations');
+  if (!el) return;
+  el.innerHTML = '<div class="skeleton skeleton-row"></div>'.repeat(3);
+  try {
+    const rels = await api('/api/copy/admin/relations');
+    if (!rels.length) {
+      el.innerHTML = '<div class="empty">No copy relations yet</div>';
+      return;
+    }
+    el.innerHTML = `
+      <div class="table-wrap"><table>
+        <thead><tr>
+          <th>Follower</th><th>Trader</th><th>Allocated</th><th>PnL</th>
+          <th>Status</th><th>Since</th><th>Actions</th>
+        </tr></thead>
+        <tbody>${rels.map(r => `
+          <tr>
+            <td>${r.follower?.username || '-'}<div class="tag">${r.follower?.email || ''}</div></td>
+            <td>${r.trader?.displayName || '-'}<div class="tag">${r.trader?.tier || ''}</div></td>
+            <td style="font-weight:600;">${r.allocation.toFixed(2)} USDT</td>
+            <td style="color: ${r.pnl >= 0 ? 'var(--accent)' : '#fca5a5'}; font-weight:600;">
+              ${r.pnl >= 0 ? '+' : ''}${(r.pnl || 0).toFixed(2)}
+            </td>
+            <td>${r.active
+              ? '<span class="badge completed">active</span>'
+              : '<span class="badge rejected">stopped</span>'}</td>
+            <td class="tag">${new Date(r.createdAt).toLocaleDateString()}</td>
+            <td>${r.active
+              ? `<button class="danger sm" onclick="stopCopy('${r._id}')">Stop</button>`
+              : ''}</td>
+          </tr>`).join('')}
+        </tbody>
+      </table></div>`;
+  } catch (e) { toast(e.message, 'error'); }
+}
+
+window.stopCopy = async (id) => {
+  if (!confirm('Stop this copy relation? Funds return to the user.')) return;
+  try {
+    await api(`/api/copy/admin/relations/${id}/stop`, { method: 'POST' });
+    toast('Relation stopped', 'success');
+    await Promise.all([loadCopyStats(), loadCopyRelations()]);
+  } catch (e) { toast(e.message, 'error'); }
+};
+
+// Hook into refreshAll
+const _origRefresh = refreshAll;
+refreshAll = async function () {
+  await _origRefresh();
+  await loadCopyStats();
+  await loadCopyRelations();
+};

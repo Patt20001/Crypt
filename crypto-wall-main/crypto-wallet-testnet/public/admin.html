@@ -43,14 +43,20 @@
     </div>
 
     <div class="card">
-      <h3>Copy Trading</h3>
-      <p class="tag" style="margin-bottom: 14px;">Seed demo traders for the copy trading feature.</p>
-      <div style="display:flex; gap:8px; flex-wrap:wrap;">
-  <button class="secondary sm" onclick="seedCopyTraders()">Seed Demo Traders</button>
-  <button class="danger sm" onclick="seedCopyTraders(true)">Reset & Re-seed</button>
+  <h3>Copy Trading</h3>
+  <p class="tag" style="margin-bottom: 14px;">Manage copy-trading traders. "Reset & Re-seed" wipes and repopulates the default 6. "Populate 100+" generates a large realistic roster.</p>
+  <div style="display:flex; gap:8px; flex-wrap:wrap;">
+    <button class="danger sm" onclick="seedCopyTraders(true)">Reset & Re-seed</button>
+    <button class="secondary sm" onclick="populateCopyTraders()">Populate 100+</button>
+  </div>
+  <div id="seed-copy-result" style="margin-top: 12px;"></div>
 </div>
-      <div id="seed-copy-result" style="margin-top: 12px;"></div>
-    </div>
+
+<div class="card">
+  <h3>Copy Trading Activity</h3>
+  <div class="grid grid-3" id="copy-stats"></div>
+  <div id="copy-relations" style="margin-top: 18px;"></div>
+</div>
 
     <div class="card">
       <h3>Broadcast Banner</h3>

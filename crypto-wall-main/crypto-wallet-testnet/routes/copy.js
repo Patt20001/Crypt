@@ -132,4 +132,157 @@ router.post('/seed', auth, async (req, res) => {
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
+/* POST populate — generate 100+ realistic traders (admin only) */
+router.post('/populate', auth, async (req, res) => {
+  try {
+    if (req.user.role !== 'admin') {
+      return res.status(403).json({ error: 'Admin only' });
+    }
+
+    const count = Math.min(Number(req.query.count) || 100, 250);
+
+    const FIRST = ['Alex','Sam','Jordan','Taylor','Morgan','Casey','Riley','Jamie','Avery','Quinn',
+      'Kai','Noor','Zara','Omar','Mia','Leo','Nia','Ravi','Sara','Theo','Ivy','Ezra','Luna','Ezra',
+      'Priya','Diego','Anya','Kofi','Yuki','Hana','Rami','Akio','Nora','Idris','Lina','Mateo','Ade',
+      'Zoe','Ivan','Fatima','Oscar','Nina','Hugo','Elif','Jonas','Amara','Kenji','Salma','Rico','Leila'];
+    const LAST  = ['Trader','Capital','Alpha','Delta','Prime','Edge','Quant','Rocket','Bear','Bull',
+      'Scalper','Swing','Whale','Flow','Ventures','Signal','Chart','Byte','Node','Fund','Hunter',
+      'Pulse','Wave','Momentum','Trend','Stack','Gain','Yield','Lever','Spot'];
+    const SUFFIX = ['','_fx','Trade','_pro','X','_capital','_labs','_v2','',''];
+    const BIOS = [
+      'Systematic trend follower focused on BTC and ETH breakouts.',
+      'Altcoin hunter with a bias toward early momentum plays.',
+      'Risk-managed swing trader using volume confirmation.',
+      'Intraday scalper on the SOL/BNB rotation.',
+      'Long-biased accumulator with multi-month horizons.',
+      'Mean-reversion trader focused on high-volatility altcoins.',
+      'Breakout specialist on large-cap crypto.',
+      'Quant-driven trader using momentum and volatility filters.',
+      'Conservative portfolio approach with tight risk limits.',
+      'Event-driven trader playing major market catalysts.',
+      'Grid bot manager with automated rebalancing.',
+      'Macro-aligned swing trader playing crypto cycles.',
+      'Order-flow focused trader watching liquidations.',
+      'Delta-neutral carry strategy with USDT lending.',
+      'Momentum scalper with 1m and 5m timeframes.',
+      'Range trader on sideways markets and consolidation.',
+      'Volatility premium collector via options and spot.',
+      'Narrative-driven trader following narrative rotation.'
+    ];
+    const TIERS = ['bronze','bronze','silver','silver','gold','gold','diamond'];
+
+    function rnd(arr) { return arr[Math.floor(Math.random() * arr.length)]; }
+    function rndBetween(a, b, dec = 2) { return +(Math.random() * (b - a) + a).toFixed(dec); }
+
+    const toInsert = [];
+    const seen = new Set();
+    let attempts = 0;
+
+    while (toInsert.length < count && attempts < count * 10) {
+      attempts++;
+      const name = `${rnd(FIRST)} ${rnd(LAST)}${rnd(SUFFIX)}`;
+      if (seen.has(name.toLowerCase())) continue;
+      seen.add(name.toLowerCase());
+
+      const tier = rnd(TIERS);
+      const roi30d = tier === 'diamond' ? rndBetween(25, 65)
+                   : tier === 'gold'    ? rndBetween(12, 38)
+                   : tier === 'silver'  ? rndBetween(4, 18)
+                   :                       rndBetween(-3, 8);
+      const winRate = tier === 'diamond' ? rndBetween(64, 82, 0)
+                   : tier === 'gold'    ? rndBetween(56, 74, 0)
+                   : tier === 'silver'  ? rndBetween(48, 66, 0)
+                   :                       rndBetween(40, 58, 0);
+      const totalTrades = Math.floor(Math.random() * 4000) + 50;
+      const followers = Math.floor(Math.random() * 3000 * (tier === 'diamond' ? 3 : 1));
+
+      toInsert.push({
+        displayName: name,
+        bio: rnd(BIOS),
+        tier,
+        roi30d,
+        winRate,
+        totalTrades,
+        followers,
+        featured: tier === 'diamond' && Math.random() > 0.7,
+        active: true
+      });
+    }
+
+    const inserted = await CopyTrader.insertMany(toInsert, { ordered: false });
+
+    res.json({
+      message: `Generated ${inserted.length} traders`,
+      count: inserted.length,
+      total: await CopyTrader.countDocuments()
+    });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+/* GET all copy relations — admin only */
+router.get('/admin/relations', auth, async (req, res) => {
+  try {
+    if (req.user.role !== 'admin') return res.status(403).json({ error: 'Admin only' });
+    const relations = await CopyRelation.find()
+      .populate('follower', 'username email')
+      .populate('trader', 'displayName tier')
+      .sort({ createdAt: -1 });
+    res.json(relations);
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+/* GET copy trading stats — admin only */
+router.get('/admin/stats', auth, async (req, res) => {
+  try {
+    if (req.user.role !== 'admin') return res.status(403).json({ error: 'Admin only' });
+    const activeRelations = await CopyRelation.countDocuments({ active: true });
+    const totalAllocatedAgg = await CopyRelation.aggregate([
+      { $match: { active: true } },
+      { $group: { _id: null, total: { $sum: '$allocation' } } }
+    ]);
+    const traders = await CopyTrader.countDocuments({ active: true });
+    const totalFollowersAgg = await CopyTrader.aggregate([
+      { $match: { active: true } },
+      { $group: { _id: null, total: { $sum: '$followers' } } }
+    ]);
+    res.json({
+      activeRelations,
+      totalAllocated: totalAllocatedAgg[0]?.total || 0,
+      traders,
+      totalFollowers: totalFollowersAgg[0]?.total || 0
+    });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+/* POST force-stop a copy relation — admin only */
+router.post('/admin/relations/:id/stop', auth, async (req, res) => {
+  try {
+    if (req.user.role !== 'admin') return res.status(403).json({ error: 'Admin only' });
+    const rel = await CopyRelation.findById(req.params.id).populate('trader');
+    if (!rel || !rel.active) return res.status(404).json({ error: 'Not found or inactive' });
+
+    const User = require('../models/User');
+    const user = await User.findById(rel.follower);
+    if (user) {
+      user.locked.USDT = Math.max(0, (user.locked.USDT || 0) - rel.allocation);
+      user.balances.USDT += rel.allocation + (rel.pnl || 0);
+      await user.save();
+    }
+    rel.active = false;
+    await rel.save();
+    if (rel.trader) {
+      rel.trader.followers = Math.max(0, rel.trader.followers - 1);
+      await rel.trader.save();
+    }
+
+    const { notify } = require('../middleware/notify');
+    await notify(user._id, 'system', 'Copy trading stopped by admin',
+      `${rel.allocation + (rel.pnl || 0)} USDT returned to your wallet`);
+
+    res.json({ ok: true });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
 module.exports = router;
