@@ -42,21 +42,46 @@
       <div id="pending" style="margin-top:16px;"></div>
     </div>
 
-    <div class="card">
-  <h3>Copy Trading</h3>
-  <p class="tag" style="margin-bottom: 14px;">Manage copy-trading traders. "Reset & Re-seed" wipes and repopulates the default 6. "Populate 100+" generates a large realistic roster.</p>
-  <div style="display:flex; gap:8px; flex-wrap:wrap;">
-    <button class="danger sm" onclick="seedCopyTraders(true)">Reset & Re-seed</button>
-    <button class="secondary sm" onclick="populateCopyTraders()">Populate 100+</button>
-  </div>
-  <div id="seed-copy-result" style="margin-top: 12px;"></div>
-</div>
+        <div class="card">
+      <h3>Copy Trading</h3>
+      <p class="tag" style="margin-bottom: 14px;">
+        Manage traders. "Reset & Re-seed" wipes and repopulates the default 6.
+        "Populate 100+" adds generated traders. CSV import supports bulk upload.
+      </p>
+      <div style="display:flex; gap:8px; flex-wrap:wrap;">
+        <button class="danger sm" onclick="seedCopyTraders(true)">Reset & Re-seed</button>
+        <button class="secondary sm" onclick="populateCopyTraders()">Populate 100+</button>
+        <button class="secondary sm" onclick="snapshotLeaderboard()">Snapshot Week</button>
+      </div>
+      <div id="seed-copy-result" style="margin-top: 12px;"></div>
+    </div>
 
-<div class="card">
-  <h3>Copy Trading Activity</h3>
-  <div class="grid grid-3" id="copy-stats"></div>
-  <div id="copy-relations" style="margin-top: 18px;"></div>
-</div>
+    <div class="card">
+      <h3>Import Traders (CSV)</h3>
+      <p class="tag" style="margin-bottom: 12px;">
+        Required: <code>displayName, bio, tier, roi30d, winRate</code> ·
+        Optional: <code>followers, totalTrades, performanceFee, platformFee</code>
+      </p>
+      <input type="file" id="csv-file" accept=".csv" style="margin-bottom: 12px;" />
+      <div style="display:flex; gap:8px; flex-wrap:wrap;">
+        <button onclick="importTradersCsv()">Import CSV</button>
+        <button class="secondary" onclick="downloadCsvTemplate()">Download Template</button>
+      </div>
+      <div id="csv-import-result" style="margin-top: 12px;"></div>
+    </div>
+
+    <div class="card">
+      <h3>Copy Trading Activity</h3>
+      <div class="grid grid-3" id="copy-stats"></div>
+      <div id="copy-relations" style="margin-top: 18px;"></div>
+    </div>
+
+    <div class="card">
+      <h3>Profit Sharing</h3>
+      <div class="grid grid-3" id="fee-stats"></div>
+      <h4 style="margin-top: 18px; font-size: 13px; color: var(--text-mute); text-transform: uppercase; letter-spacing: 0.08em;">Top Earning Traders</h4>
+      <div id="fee-top" style="margin-top: 10px;"></div>
+    </div>
 
     <div class="card">
       <h3>Broadcast Banner</h3>
@@ -103,6 +128,7 @@
   <script src="/js/ui.js"></script>
   <script src="/js/auth.js"></script>
   <script src="/js/notifications.js"></script>
+  <script src="/js/csv-import.js"></script>
   <script src="/js/admin.js"></script>
 </body>
 </html>

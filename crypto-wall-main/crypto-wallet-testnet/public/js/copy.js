@@ -5,7 +5,12 @@ let userBalance = 0;
 if (user) document.addEventListener('DOMContentLoaded', init);
 
 async function init() {
-  await Promise.all([loadBalance(), loadTraders(), loadMyCopies()]);
+  await Promise.all([
+    loadBalance(),
+    loadTraders(),
+    loadMyCopies(),
+    loadLeaderboard()
+  ]);
 }
 
 async function loadBalance() {
@@ -208,3 +213,44 @@ window.unfollow = async (relId) => {
     await Promise.all([loadBalance(), loadMyCopies()]);
   } catch (e) { toast(e.message, 'error'); }
 };
+
+/* ============ LEADERBOARD ============ */
+async function loadLeaderboard() {
+  const weekEl = document.getElementById('leaderboard-week');
+  const topEl = document.getElementById('leaderboard-top');
+  if (!weekEl || !topEl) return;
+
+  try {
+    const r = await api('/api/leaderboard/current');
+    weekEl.textContent = r.weekId;
+
+    const medals = ['🥇', '🥈', '🥉'];
+    const top3 = r.entries.slice(0, 3);
+    const rest = r.entries.slice(3);
+
+    topEl.innerHTML = `
+      <div class="grid grid-3" style="margin-bottom: 14px;">
+        ${top3.map((t, i) => `
+          <div style="text-align:center; padding: 16px 12px; background: rgba(6,9,21,.4); border-radius: 12px; border: 1px solid var(--border);">
+            <div style="font-size: 32px; margin-bottom: 6px;">${medals[i]}</div>
+            <div style="font-weight:700;">${t.displayName}</div>
+            <div class="tag">${t.tier}</div>
+            <div style="color:var(--accent); font-weight:700; margin-top:6px;">
+              ${t.roi30d >= 0 ? '+' : ''}${t.roi30d.toFixed(2)}%
+            </div>
+          </div>`).join('')}
+      </div>
+      ${rest.length ? `
+        <div style="display:flex; gap:8px; flex-wrap:wrap; justify-content:center;">
+          ${rest.map(t => `
+            <div class="net-chip">
+              <span style="color:var(--accent); font-weight:700;">#${t.rank}</span>
+              ${t.displayName}
+              <span class="tag" style="margin-left:4px;">${t.roi30d >= 0 ? '+' : ''}${t.roi30d.toFixed(2)}%</span>
+            </div>`).join('')}
+        </div>` : ''}
+    `;
+  } catch (e) {
+    console.warn('Leaderboard failed:', e.message);
+  }
+}

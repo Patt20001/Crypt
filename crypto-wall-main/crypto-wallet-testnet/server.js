@@ -34,6 +34,7 @@ app.use('/api/addresses',     require('./routes/addresses'));
 app.use('/api/portfolio',     require('./routes/portfolio'));
 app.use('/api/orders',        require('./routes/orders'));
 app.use('/api/copy',          require('./routes/copy'));
+app.use('/api/leaderboard',   require('./routes/leaderboard'));
 
 app.get('/', (req, res) => res.sendFile(path.join(__dirname, 'public/index.html')));
 

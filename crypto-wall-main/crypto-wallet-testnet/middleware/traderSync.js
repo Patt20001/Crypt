@@ -1,13 +1,17 @@
 const CopyTrader = require('../models/CopyTrader');
 const CopyRelation = require('../models/CopyRelation');
+const User = require('../models/User');
+const Transaction = require('../models/Transaction');
+const { notify } = require('./notify');
 
-/* Nudge all copy traders' stats every 60 seconds */
+/* ============================================================
+   Trader ROI drift every 60s
+   ============================================================ */
 async function syncTraders() {
   try {
     const traders = await CopyTrader.find({ active: true });
     if (!traders.length) return;
 
-    // ---- 1. Update ROI / win rate / trade count ----
     for (const t of traders) {
       const bias = {
         diamond: 0.03,
@@ -26,55 +30,101 @@ async function syncTraders() {
       t.winRate = Math.max(20, Math.min(95, t.winRate));
 
       if (Math.random() > 0.7) t.totalTrades += 1;
+      if (Math.random() > 0.9) t.followers += 1;
 
       await t.save();
     }
 
-    // ---- 2. Reconcile followers from real CopyRelation docs ----
+    // Reconcile follower counts with real relations
     const relations = await CopyRelation.find({ active: true });
     const realFollowers = {};
     relations.forEach(r => {
       const id = r.trader.toString();
       realFollowers[id] = (realFollowers[id] || 0) + 1;
     });
-
     for (const t of traders) {
       const real = realFollowers[t._id.toString()] || 0;
-      // Keep a synthetic base so follower count doesn't look empty for new traders
       const synthetic = Math.max(t.followers - real, 10);
       t.followers = synthetic + real;
       await t.save();
-    }
-
-    // ---- 3. Sync PnL on active relations (paper gain from trader's ROI) ----
-    for (const r of relations) {
-      const trader = traders.find(t => t._id.toString() === r.trader.toString());
-      if (!trader) continue;
-
-      // Follower gains a fraction of trader's ROI (weighted by their allocation)
-      const dailyReturn = trader.roi30d / 30 / 100;
-      const gain = r.allocation * dailyReturn * 0.5;  // 50% of trader's return
-      r.pnl = +((r.pnl || 0) + gain).toFixed(4);
-      await r.save();
     }
   } catch (e) {
     console.error('traderSync error:', e.message);
   }
 }
 
+/* ============================================================
+   Profit-sharing fee settlement (hourly)
+   Uses high-water mark — fee only charged on NEW profit above previous peak
+   ============================================================ */
+async function settleFees() {
+  try {
+    const relations = await CopyRelation.find({ active: true, pnl: { $gt: 0 } })
+      .populate('trader');
+
+    for (const rel of relations) {
+      if (!rel.trader) continue;
+      if (rel.pnl <= rel.highWaterMark) continue;
+
+      const newProfit = rel.pnl - rel.highWaterMark;
+      const traderFee = newProfit * (rel.trader.performanceFee / 100);
+      const platformFee = newProfit * (rel.trader.platformFee / 100);
+
+      const follower = await User.findById(rel.follower);
+      if (!follower) continue;
+
+      follower.balances.USDT = Math.max(0, follower.balances.USDT - traderFee - platformFee);
+      await follower.save();
+
+      if (rel.trader.user) {
+        const traderUser = await User.findById(rel.trader.user);
+        if (traderUser) {
+          traderUser.balances.USDT += traderFee;
+          await traderUser.save();
+          await notify(traderUser._id, 'system', 'Performance fee earned',
+            `${traderFee.toFixed(4)} USDT from ${follower.username}'s copy of your trades`);
+        }
+      }
+
+      rel.trader.totalEarned = (rel.trader.totalEarned || 0) + traderFee;
+      await rel.trader.save();
+
+      rel.traderFees = (rel.traderFees || 0) + traderFee;
+      rel.platformFees = (rel.platformFees || 0) + platformFee;
+      rel.highWaterMark = rel.pnl;
+      rel.lastFeeSettledAt = new Date();
+      await rel.save();
+
+      await Transaction.create({
+        user: follower._id,
+        type: 'earn',
+        currency: 'USDT',
+        amount: -(traderFee + platformFee),
+        status: 'completed',
+        note: `Performance fee: ${traderFee.toFixed(4)} to ${rel.trader.displayName}, ${platformFee.toFixed(4)} to platform`
+      });
+
+      await notify(follower._id, 'system', 'Performance fee charged',
+        `${(traderFee + platformFee).toFixed(4)} USDT from profit on ${rel.trader.displayName}`);
+    }
+  } catch (e) {
+    console.error('settleFees error:', e.message);
+  }
+}
+
 let intervalHandle = null;
+let feeInterval = null;
 
 function start() {
   if (intervalHandle) return;
   console.log('📈 Trader ROI sync started');
   intervalHandle = setInterval(syncTraders, 60_000);
+  feeInterval = setInterval(settleFees, 60 * 60 * 1000);
 }
 
 function stop() {
-  if (intervalHandle) {
-    clearInterval(intervalHandle);
-    intervalHandle = null;
-  }
+  if (intervalHandle) { clearInterval(intervalHandle); intervalHandle = null; }
+  if (feeInterval) { clearInterval(feeInterval); feeInterval = null; }
 }
 
-module.exports = { start, stop, syncTraders };
+module.exports = { start, stop, syncTraders, settleFees };

@@ -11,6 +11,11 @@ const copyTraderSchema = new mongoose.Schema({
   totalTrades: { type: Number, default: 0 },
   featured:    { type: Boolean, default: false },
   active:      { type: Boolean, default: true },
+
+  performanceFee: { type: Number, default: 10 },
+  platformFee:    { type: Number, default: 2 },
+  totalEarned:    { type: Number, default: 0 },
+
   createdAt:   { type: Date, default: Date.now }
 });
 

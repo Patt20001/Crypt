@@ -1,10 +1,13 @@
 const express = require('express');
+const multer = require('multer');
 const CopyTrader = require('../models/CopyTrader');
 const CopyRelation = require('../models/CopyRelation');
 const User = require('../models/User');
 const { auth } = require('../middleware/auth');
 const { notify } = require('../middleware/notify');
 const router = express.Router();
+
+const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 5 * 1024 * 1024 } });
 
 /* GET all copy traders */
 router.get('/', auth, async (req, res) => {
@@ -45,6 +48,7 @@ router.post('/follow/:traderId', auth, async (req, res) => {
       existing.active = true;
       existing.autoCopy = true;
       existing.pnl = 0;
+      existing.highWaterMark = 0;
       relation = await existing.save();
     } else {
       relation = await CopyRelation.create({
@@ -99,7 +103,6 @@ router.post('/seed', auth, async (req, res) => {
 
     const force = req.query.force === 'true';
 
-    // Force mode: wipe and reseed
     if (force) {
       await CopyTrader.deleteMany({});
     } else {
@@ -142,10 +145,10 @@ router.post('/populate', auth, async (req, res) => {
     const count = Math.min(Number(req.query.count) || 100, 250);
 
     const FIRST = ['Alex','Sam','Jordan','Taylor','Morgan','Casey','Riley','Jamie','Avery','Quinn',
-      'Kai','Noor','Zara','Omar','Mia','Leo','Nia','Ravi','Sara','Theo','Ivy','Ezra','Luna','Ezra',
+      'Kai','Noor','Zara','Omar','Mia','Leo','Nia','Ravi','Sara','Theo','Ivy','Ezra','Luna',
       'Priya','Diego','Anya','Kofi','Yuki','Hana','Rami','Akio','Nora','Idris','Lina','Mateo','Ade',
       'Zoe','Ivan','Fatima','Oscar','Nina','Hugo','Elif','Jonas','Amara','Kenji','Salma','Rico','Leila'];
-    const LAST  = ['Trader','Capital','Alpha','Delta','Prime','Edge','Quant','Rocket','Bear','Bull',
+    const LAST = ['Trader','Capital','Alpha','Delta','Prime','Edge','Quant','Rocket','Bear','Bull',
       'Scalper','Swing','Whale','Flow','Ventures','Signal','Chart','Byte','Node','Fund','Hunter',
       'Pulse','Wave','Momentum','Trend','Stack','Gain','Yield','Lever','Spot'];
     const SUFFIX = ['','_fx','Trade','_pro','X','_capital','_labs','_v2','',''];
@@ -204,6 +207,8 @@ router.post('/populate', auth, async (req, res) => {
         winRate,
         totalTrades,
         followers,
+        performanceFee: tier === 'diamond' ? 15 : 10,
+        platformFee: 2,
         featured: tier === 'diamond' && Math.random() > 0.7,
         active: true
       });
@@ -216,9 +221,7 @@ router.post('/populate', auth, async (req, res) => {
       count: inserted.length,
       total: await CopyTrader.countDocuments()
     });
-  } catch (e) {
-    res.status(500).json({ error: e.message });
-  }
+  } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
 /* GET all copy relations — admin only */
@@ -256,6 +259,30 @@ router.get('/admin/stats', auth, async (req, res) => {
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
+/* GET profit-sharing totals — admin only */
+router.get('/admin/fees', auth, async (req, res) => {
+  try {
+    if (req.user.role !== 'admin') return res.status(403).json({ error: 'Admin only' });
+
+    const totalTraderFees = await CopyRelation.aggregate([
+      { $group: { _id: null, total: { $sum: '$traderFees' } } }
+    ]);
+    const totalPlatformFees = await CopyRelation.aggregate([
+      { $group: { _id: null, total: { $sum: '$platformFees' } } }
+    ]);
+    const topTraders = await CopyTrader.find({ totalEarned: { $gt: 0 } })
+      .sort({ totalEarned: -1 })
+      .limit(10)
+      .select('displayName tier totalEarned followers');
+
+    res.json({
+      totalTraderFees: totalTraderFees[0]?.total || 0,
+      totalPlatformFees: totalPlatformFees[0]?.total || 0,
+      topTraders
+    });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
 /* POST force-stop a copy relation — admin only */
 router.post('/admin/relations/:id/stop', auth, async (req, res) => {
   try {
@@ -263,7 +290,6 @@ router.post('/admin/relations/:id/stop', auth, async (req, res) => {
     const rel = await CopyRelation.findById(req.params.id).populate('trader');
     if (!rel || !rel.active) return res.status(404).json({ error: 'Not found or inactive' });
 
-    const User = require('../models/User');
     const user = await User.findById(rel.follower);
     if (user) {
       user.locked.USDT = Math.max(0, (user.locked.USDT || 0) - rel.allocation);
@@ -277,12 +303,79 @@ router.post('/admin/relations/:id/stop', auth, async (req, res) => {
       await rel.trader.save();
     }
 
-    const { notify } = require('../middleware/notify');
     await notify(user._id, 'system', 'Copy trading stopped by admin',
       `${rel.allocation + (rel.pnl || 0)} USDT returned to your wallet`);
 
     res.json({ ok: true });
   } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+/* POST import traders from CSV — admin only */
+router.post('/import', auth, upload.single('file'), async (req, res) => {
+  try {
+    if (req.user.role !== 'admin') return res.status(403).json({ error: 'Admin only' });
+    if (!req.file) return res.status(400).json({ error: 'No file uploaded' });
+
+    const csv = req.file.buffer.toString('utf-8');
+    const lines = csv.split(/\r?\n/).filter(l => l.trim());
+    if (lines.length < 2) return res.status(400).json({ error: 'CSV must have header + data' });
+
+    const header = lines[0].split(',').map(h => h.trim().toLowerCase());
+    const required = ['displayname', 'bio', 'tier', 'roi30d', 'winrate'];
+    for (const col of required) {
+      if (!header.includes(col)) {
+        return res.status(400).json({
+          error: `Missing required column: ${col}. Required: ${required.join(', ')}`
+        });
+      }
+    }
+
+    const idx = col => header.indexOf(col);
+    const validTiers = ['bronze', 'silver', 'gold', 'diamond'];
+
+    const toInsert = [];
+    const errors = [];
+
+    for (let i = 1; i < lines.length; i++) {
+      const cols = lines[i].split(',').map(c => c.trim());
+      const name = cols[idx('displayname')];
+      if (!name) { errors.push(`Line ${i + 1}: empty displayName`); continue; }
+
+      const tier = cols[idx('tier')]?.toLowerCase();
+      if (!validTiers.includes(tier)) {
+        errors.push(`Line ${i + 1}: invalid tier "${tier}"`);
+        continue;
+      }
+
+      toInsert.push({
+        displayName: name,
+        bio: cols[idx('bio')] || '',
+        tier,
+        roi30d: Number(cols[idx('roi30d')]) || 0,
+        winRate: Number(cols[idx('winrate')]) || 0,
+        followers: header.includes('followers') ? (Number(cols[idx('followers')]) || 0) : 0,
+        totalTrades: header.includes('totaltrades') ? (Number(cols[idx('totaltrades')]) || 0) : 0,
+        performanceFee: header.includes('performancefee') ? (Number(cols[idx('performancefee')]) || 10) : 10,
+        platformFee: header.includes('platformfee') ? (Number(cols[idx('platformfee')]) || 2) : 2,
+        active: true
+      });
+    }
+
+    if (!toInsert.length) {
+      return res.status(400).json({ error: 'No valid rows to import', errors });
+    }
+
+    const inserted = await CopyTrader.insertMany(toInsert, { ordered: false });
+
+    res.json({
+      message: `Imported ${inserted.length} traders`,
+      count: inserted.length,
+      errors,
+      total: await CopyTrader.countDocuments()
+    });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
 });
 
 module.exports = router;
