@@ -73,7 +73,27 @@
     <div class="card">
       <h3>Copy Trading Activity</h3>
       <div class="grid grid-3" id="copy-stats"></div>
-      <div id="copy-relations" style="margin-top: 18px;"></div>
+      <div id="copy-relations"></div>
+
+<div class="modal" id="adjust-pnl-modal">
+  <div class="modal-inner glass" style="max-width: 440px;">
+    <div class="modal-head">
+      <h3>Adjust Copy PnL</h3>
+      <button class="modal-close" onclick="closeModal('adjust-pnl-modal')">×</button>
+    </div>
+    <div id="adjust-pnl-body"></div>
+  </div>
+</div>
+
+<div class="modal" id="adjust-fees-modal">
+  <div class="modal-inner glass" style="max-width: 440px;">
+    <div class="modal-head">
+      <h3>Set Profit-Sharing Fees</h3>
+      <button class="modal-close" onclick="closeModal('adjust-fees-modal')">×</button>
+    </div>
+    <div id="adjust-fees-body"></div>
+  </div>
+</div>
     </div>
 
     <div class="card">

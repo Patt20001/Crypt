@@ -514,9 +514,19 @@ async function loadCopyRelations() {
               ? '<span class="badge completed">active</span>'
               : '<span class="badge rejected">stopped</span>'}</td>
             <td class="tag">${new Date(r.createdAt).toLocaleDateString()}</td>
-            <td>${r.active
-              ? `<button class="danger sm" onclick="stopCopy('${r._id}')">Stop</button>`
-              : ''}</td>
+            <td style="display:flex; gap:4px; flex-wrap:wrap;">
+  ${r.active
+    ? `<button class="danger sm" onclick="stopCopy('${r._id}')">Stop</button>`
+    : ''}
+  <button class="secondary sm" onclick="openAdjustPnl('${r._id}', ${r.pnl || 0}, '${r.trader?.displayName || ''}')">
+    PnL
+  </button>
+  ${r.trader
+    ? `<button class="secondary sm" onclick="openAdjustFees('${r.trader._id}', ${r.trader.performanceFee || 10}, ${r.trader.platformFee || 2}, '${r.trader.displayName}')">
+         Fees
+       </button>`
+    : ''}
+</td>
           </tr>`).join('')}
         </tbody>
       </table></div>`;
@@ -608,4 +618,73 @@ const _origRefreshAll = refreshAll;
 refreshAll = async function () {
   await _origRefreshAll();
   await Promise.all([loadCopyStats(), loadCopyRelations(), loadFeeStats()]);
+};
+
+window.openAdjustPnl = (relationId, currentPnl, traderName) => {
+  document.getElementById('adjust-pnl-body').innerHTML = `
+    <p class="tag" style="margin-bottom: 14px;">
+      Adjust PnL for the copy of <b>${traderName}</b>. Positive = profit, negative = loss.
+    </p>
+    <div style="padding: 12px; background: rgba(148,163,184,.06); border-radius: 10px; margin-bottom: 14px;">
+      <div style="display:flex; justify-content:space-between;">
+        <span class="tag">Current PnL</span>
+        <b style="color: ${currentPnl >= 0 ? 'var(--accent)' : '#fca5a5'};">
+          ${currentPnl >= 0 ? '+' : ''}${currentPnl.toFixed(2)} USDT
+        </b>
+      </div>
+    </div>
+    <label>Amount to add (USDT)</label>
+    <input id="adjust-amount" type="number" step="0.01" placeholder="50 or -25" />
+    <label>Reason</label>
+    <input id="adjust-reason" placeholder="Manual correction" />
+    <button style="width:100%" onclick="confirmAdjustPnl('${relationId}')">Apply Adjustment</button>
+  `;
+  openModal('adjust-pnl-modal');
+};
+
+window.confirmAdjustPnl = async (id) => {
+  const amount = Number(document.getElementById('adjust-amount').value);
+  const reason = document.getElementById('adjust-reason').value;
+  if (!amount) return toast('Enter an amount', 'warn');
+  try {
+    await api(`/api/copy/admin/relations/${id}/adjust`, {
+      method: 'POST',
+      body: JSON.stringify({ amount, reason })
+    });
+    closeModal('adjust-pnl-modal');
+    toast('PnL adjusted', 'success');
+    await Promise.all([loadCopyStats(), loadCopyRelations()]);
+  } catch (e) { toast(e.message, 'error'); }
+};
+
+window.openAdjustFees = async (traderId, currentPerf, currentPlat, traderName) => {
+  document.getElementById('adjust-fees-body').innerHTML = `
+    <p class="tag" style="margin-bottom: 14px;">
+      Set profit-sharing fees for <b>${traderName}</b>.
+    </p>
+    <label>Performance Fee (%)</label>
+    <input id="perf-fee" type="number" min="0" max="50" value="${currentPerf}" />
+    <p class="tag" style="margin-top: -6px; margin-bottom: 14px;">% of follower's profit paid to trader (0–50)</p>
+
+    <label>Platform Fee (%)</label>
+    <input id="plat-fee" type="number" min="0" max="20" value="${currentPlat}" />
+    <p class="tag" style="margin-top: -6px; margin-bottom: 14px;">% of follower's profit paid to platform (0–20)</p>
+
+    <button style="width:100%" onclick="confirmAdjustFees('${traderId}')">Save Fees</button>
+  `;
+  openModal('adjust-fees-modal');
+};
+
+window.confirmAdjustFees = async (traderId) => {
+  const performanceFee = Number(document.getElementById('perf-fee').value);
+  const platformFee = Number(document.getElementById('plat-fee').value);
+  try {
+    await api(`/api/copy/admin/traders/${traderId}/fees`, {
+      method: 'POST',
+      body: JSON.stringify({ performanceFee, platformFee })
+    });
+    closeModal('adjust-fees-modal');
+    toast('Fees updated', 'success');
+    await Promise.all([loadCopyStats(), loadCopyRelations()]);
+  } catch (e) { toast(e.message, 'error'); }
 };

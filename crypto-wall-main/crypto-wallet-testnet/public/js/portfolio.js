@@ -8,14 +8,12 @@ async function load() {
       maximumFractionDigits: 2
     });
 
-    // PnL cards
     const pnl = p.pnl || {};
     document.getElementById('pnl-realized').textContent = formatMoney(pnl.realized);
     document.getElementById('pnl-unrealized').textContent = formatMoney(pnl.unrealized);
     document.getElementById('pnl-total').textContent = formatMoney(pnl.total);
     document.getElementById('pnl-total').style.color = pnl.total >= 0 ? 'var(--accent)' : '#fca5a5';
 
-    // Holdings
     document.getElementById('holdings').innerHTML = p.holdings.map(h => `
       <div class="card">
         <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:10px;">
@@ -26,13 +24,12 @@ async function load() {
         <div class="tag" style="margin-top:6px;">${h.amount.toFixed(h.symbol === 'USDT' ? 2 : 6)} ${h.symbol} @ $${h.price.toLocaleString()}</div>
       </div>`).join('') || '<div class="empty">No holdings</div>';
 
-    // Positions with PnL
     if (pnl.positions && pnl.positions.length) {
       document.getElementById('positions').innerHTML = `
         <div class="table-wrap"><table>
           <thead><tr>
             <th>Pair</th><th>Amount</th><th>Avg Cost</th><th>Current</th>
-            <th>Unrealized</th><th>Realized</th>
+            <th>Unrealized</th><th>Realized</th><th>SL / TP</th><th>Actions</th>
           </tr></thead>
           <tbody>${pnl.positions.map(pos => `
             <tr>
@@ -45,6 +42,15 @@ async function load() {
               </td>
               <td style="color: ${pos.realized >= 0 ? 'var(--accent)' : '#fca5a5'};">
                 ${formatMoney(pos.realized)}
+              </td>
+              <td class="tag">
+                ${pos.stopLoss ? `SL $${pos.stopLoss}` : '—'} /
+                ${pos.takeProfit ? `TP $${pos.takeProfit}` : '—'}
+              </td>
+              <td>
+                <button class="danger sm" onclick="openClosePosition('${pos._id || pos.pair}')">
+                  Close
+                </button>
               </td>
             </tr>`).join('')}
           </tbody>
@@ -64,6 +70,61 @@ function formatMoney(v) {
   const sign = v < 0 ? '-' : '';
   return `${sign}$${Math.abs(v).toLocaleString(undefined, { maximumFractionDigits: 2 })}`;
 }
+
+window.openClosePosition = async (posId) => {
+  try {
+    const positions = await api('/api/orders/positions');
+    const pos = positions.find(p => p._id === posId || p.pair === posId);
+    if (!pos) return toast('Position not found', 'error');
+
+    const portfolio = await api('/api/portfolio');
+    const row = portfolio.pnl?.positions?.find(p => p.pair === pos.pair) || {};
+
+    document.getElementById('close-pos-body').innerHTML = `
+      <div style="padding: 14px; background: rgba(148,163,184,.06); border-radius: 10px; margin-bottom: 16px;">
+        <div style="display:flex; justify-content:space-between; margin-bottom: 6px;">
+          <span class="tag">Pair</span>
+          <b>${pos.pair}</b>
+        </div>
+        <div style="display:flex; justify-content:space-between; margin-bottom: 6px;">
+          <span class="tag">Amount</span>
+          <b>${pos.amount.toFixed(6)} ${pos.base}</b>
+        </div>
+        <div style="display:flex; justify-content:space-between; margin-bottom: 6px;">
+          <span class="tag">Avg cost</span>
+          <b>$${pos.avgCost.toFixed(2)}</b>
+        </div>
+        <div style="display:flex; justify-content:space-between;">
+          <span class="tag">Current value</span>
+          <b>$${(row.marketValue || 0).toFixed(2)}</b>
+        </div>
+      </div>
+      <p class="tag" style="margin-bottom: 14px;">
+        The entire position will be sold at market price. Realized PnL:
+        <b style="color: ${row.unrealized >= 0 ? 'var(--accent)' : '#fca5a5'};">
+          ${formatMoney(row.unrealized || 0)}
+        </b>
+      </p>
+      <div style="display:flex; gap:10px;">
+        <button class="secondary" style="flex:1;" onclick="closeModal('close-position-modal')">Cancel</button>
+        <button class="danger" style="flex:1;" onclick="confirmClosePosition('${pos._id}')">Close Position</button>
+      </div>
+    `;
+    openModal('close-position-modal');
+  } catch (e) {
+    toast(e.message, 'error');
+  }
+};
+
+window.confirmClosePosition = async (posId) => {
+  try {
+    await api(`/api/orders/positions/${posId}/close`, { method: 'POST' });
+    closeModal('close-position-modal');
+    toast('Position closed', 'success');
+    // Reload both portfolio and positions data
+    setTimeout(() => load(), 400);
+  } catch (e) { toast(e.message, 'error'); }
+};
 
 function drawChart(history) {
   const svg = document.getElementById('chart');

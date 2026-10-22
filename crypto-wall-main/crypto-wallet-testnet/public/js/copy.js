@@ -77,21 +77,25 @@ window.applyFilters = (resetPage = true) => {
       </div>
       <p class="tag" style="margin-bottom:14px; line-height:1.5;">${t.bio}</p>
       <div class="grid grid-3" style="gap:10px; margin-bottom:16px;">
-        <div>
-          <div class="tag">30d ROI</div>
-          <div style="font-weight:700; font-size:16px; color:${t.roi30d >= 0 ? 'var(--accent)' : '#fca5a5'};">
-            ${t.roi30d >= 0 ? '+' : ''}${t.roi30d.toFixed(2)}%
-          </div>
-        </div>
-        <div>
-          <div class="tag">Win rate</div>
-          <div style="font-weight:700; font-size:16px;">${t.winRate.toFixed(1)}%</div>
-        </div>
-        <div>
-          <div class="tag">Followers</div>
-          <div style="font-weight:700; font-size:16px;">${t.followers}</div>
-        </div>
-      </div>
+  <div>
+    <div class="tag">30d ROI</div>
+    <div style="font-weight:700; font-size:16px; color:${t.roi30d >= 0 ? 'var(--accent)' : '#fca5a5'};">
+      ${t.roi30d >= 0 ? '+' : ''}${t.roi30d.toFixed(2)}%
+    </div>
+  </div>
+  <div>
+    <div class="tag">Win rate</div>
+    <div style="font-weight:700; font-size:16px;">${t.winRate.toFixed(1)}%</div>
+  </div>
+  <div>
+    <div class="tag">Followers</div>
+    <div style="font-weight:700; font-size:16px;">${t.followers}</div>
+  </div>
+</div>
+<div style="display:flex; justify-content:space-between; align-items:center; padding: 6px 0; border-top: 1px solid var(--border); margin-bottom: 12px; font-size: 12px; color: var(--text-mute);">
+  <span>Performance fee</span>
+  <span>${t.performanceFee || 10}%</span>
+</div>
       <button style="width:100%" onclick="openFollow('${t._id}')">Copy this trader</button>
     </div>`).join('');
 
@@ -177,6 +181,9 @@ window.openFollow = (traderId) => {
     <p class="tag" style="margin-bottom:14px;">
       Allocate USDT to mirror ${t.displayName}'s trades. You can stop anytime.
     </p>
+    <div style="padding: 10px 12px; background: rgba(245,158,11,.08); border: 1px solid rgba(245,158,11,.25); border-radius: 10px; margin-bottom: 14px; font-size: 12px; line-height: 1.5;">
+  ⚠️ <b>Performance fee: ${t.performanceFee || 10}%</b> of any profits earned will be paid to this trader.
+</div>
     <div style="padding:12px; background:rgba(148,163,184,.06); border-radius:10px; margin-bottom:14px;">
       <div style="display:flex; justify-content:space-between;">
         <span class="tag">Your balance</span>

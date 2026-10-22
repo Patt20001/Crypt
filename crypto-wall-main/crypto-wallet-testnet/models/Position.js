@@ -2,11 +2,16 @@ const mongoose = require('mongoose');
 
 const positionSchema = new mongoose.Schema({
   user:     { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true },
-  pair:     { type: String, required: true },       // 'BTC/USDT'
-  base:     { type: String, required: true },       // 'BTC'
-  amount:   { type: Number, required: true },       // amount of base held
-  avgCost:  { type: Number, required: true },       // average USD cost per unit
-  realized:{ type: Number, default: 0 },            // cumulative realized PnL
+  pair:     { type: String, required: true },
+  base:     { type: String, required: true },
+  amount:   { type: Number, required: true },
+  avgCost:  { type: Number, required: true },
+  realized: { type: Number, default: 0 },
+
+  // 👇 SL/TP on the position (not on the order)
+  stopLoss:   { type: Number, default: 0 },
+  takeProfit: { type: Number, default: 0 },
+
   updatedAt:{ type: Date, default: Date.now }
 });
 

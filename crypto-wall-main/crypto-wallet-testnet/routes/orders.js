@@ -7,9 +7,6 @@ const { auth } = require('../middleware/auth');
 const { notify } = require('../middleware/notify');
 const router = express.Router();
 
-/* ============================================================
-   SUPPORTED MARKETS (7 pairs)
-   ============================================================ */
 const MARKETS = [
   { pair: 'BTC/USDT',  base: 'BTC',  quote: 'USDT', decimals: 2 },
   { pair: 'ETH/USDT',  base: 'ETH',  quote: 'USDT', decimals: 2 },
@@ -24,9 +21,6 @@ function isSupported(pair) {
   return MARKETS.some(m => m.pair === pair);
 }
 
-/* ============================================================
-   EXCHANGE HEALTH DETECTION
-   ============================================================ */
 const exchangeState = { name: null, lastCheck: 0, ttl: 60_000 };
 
 async function detectExchange() {
@@ -57,9 +51,6 @@ async function detectExchange() {
   return 'fallback';
 }
 
-/* ============================================================
-   PRICE CACHE (per pair)
-   ============================================================ */
 const priceCache = {};
 MARKETS.forEach(m => { priceCache[m.pair] = { price: 0, ts: 0 }; });
 const CACHE_TTL = 3000;
@@ -109,28 +100,32 @@ async function fetchLivePrice(pair) {
 }
 
 /* ============================================================
-   POSITION HELPERS (for PnL)
+   POSITION HELPERS
    ============================================================ */
-async function upsertPosition(userId, pair, base, deltaAmount, price) {
-  // deltaAmount > 0 = buy, < 0 = sell
+async function upsertPosition(userId, pair, base, deltaAmount, price, sl, tp) {
   let pos = await Position.findOne({ user: userId, pair });
   if (!pos) {
     pos = new Position({ user: userId, pair, base, amount: 0, avgCost: 0, realized: 0 });
   }
 
   if (deltaAmount > 0) {
-    // Buying: update average cost
     const newAmount = pos.amount + deltaAmount;
     const newCost = (pos.amount * pos.avgCost) + (deltaAmount * price);
     pos.avgCost = newCost / newAmount;
     pos.amount = newAmount;
+    // Set or update SL/TP when opening/adding
+    if (sl) pos.stopLoss = sl;
+    if (tp) pos.takeProfit = tp;
   } else {
-    // Selling: realize PnL
     const sellAmount = Math.abs(deltaAmount);
     const realizedPnl = sellAmount * (price - pos.avgCost);
     pos.realized += realizedPnl;
     pos.amount = Math.max(0, pos.amount - sellAmount);
-    if (pos.amount === 0) pos.avgCost = 0;
+    if (pos.amount === 0) {
+      pos.avgCost = 0;
+      pos.stopLoss = 0;
+      pos.takeProfit = 0;
+    }
   }
 
   pos.updatedAt = new Date();
@@ -142,7 +137,6 @@ async function upsertPosition(userId, pair, base, deltaAmount, price) {
    ROUTES
    ============================================================ */
 
-// GET markets
 router.get('/markets', auth, async (req, res) => {
   try {
     const withPrices = await Promise.all(MARKETS.map(async m => ({
@@ -150,21 +144,14 @@ router.get('/markets', auth, async (req, res) => {
       price: await fetchLivePrice(m.pair)
     })));
     res.json(withPrices);
-  } catch (e) {
-    res.status(500).json({ error: e.message });
-  }
+  } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
-// GET health
 router.get('/health', async (req, res) => {
-  try {
-    res.json({ exchange: await detectExchange() });
-  } catch (e) {
-    res.status(500).json({ error: e.message });
-  }
+  try { res.json({ exchange: await detectExchange() }); }
+  catch (e) { res.status(500).json({ error: e.message }); }
 });
 
-// GET order book
 router.get('/book/:pair', auth, async (req, res) => {
   try {
     const pair = req.params.pair.replace('-', '/');
@@ -183,12 +170,10 @@ router.get('/book/:pair', auth, async (req, res) => {
     }
     bids.sort((a, b) => b.price - a.price);
     asks.sort((a, b) => a.price - b.price);
-
     res.json({ pair, mid, bids, asks, updatedAt: new Date() });
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
-// GET trades
 router.get('/trades/:pair', auth, async (req, res) => {
   try {
     const pair = req.params.pair.replace('-', '/');
@@ -209,16 +194,56 @@ router.get('/trades/:pair', auth, async (req, res) => {
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
-// GET my orders
 router.get('/my', auth, async (req, res) => {
   const orders = await Order.find({ user: req.user._id }).sort({ createdAt: -1 }).limit(50);
   res.json(orders);
 });
 
-// POST place order (market OR limit OR SL/TP)
+/* GET my positions (for portfolio close buttons) */
+router.get('/positions', auth, async (req, res) => {
+  const positions = await Position.find({ user: req.user._id, amount: { $gt: 0 } });
+  res.json(positions);
+});
+
+/* POST close a position at market price */
+router.post('/positions/:id/close', auth, async (req, res) => {
+  try {
+    const pos = await Position.findOne({ _id: req.params.id, user: req.user._id });
+    if (!pos || pos.amount <= 0) return res.status(404).json({ error: 'Position not found' });
+
+    const mid = await fetchLivePrice(pos.pair);
+    if (!mid) return res.status(400).json({ error: 'Price unavailable' });
+
+    const user = await User.findById(req.user._id);
+    const [base, quote] = pos.pair.split('/');
+    const proceeds = mid * pos.amount;
+
+    user.balances[base] = Math.max(0, (user.balances[base] || 0) - pos.amount);
+    user.balances[quote] = (user.balances[quote] || 0) + proceeds;
+    await user.save();
+
+    const realizedPnl = pos.amount * (mid - pos.avgCost);
+
+    // Record PnL as a transaction, then DELETE the position entirely
+    await Transaction.create({
+      user: user._id, type: 'earn',
+      currency: quote, amount: proceeds, status: 'completed',
+      note: `Closed ${pos.pair} · ${pos.amount.toFixed(6)} ${base} @ ${mid.toFixed(2)} · PnL ${realizedPnl >= 0 ? '+' : ''}${realizedPnl.toFixed(2)}`
+    });
+
+    await notify(user._id, 'system', 'Position closed',
+      `Sold ${pos.amount.toFixed(6)} ${base} @ ${mid.toFixed(2)} · PnL ${realizedPnl >= 0 ? '+' : ''}${realizedPnl.toFixed(2)} USDT`);
+
+    await Position.deleteOne({ _id: pos._id });
+
+    res.json({ closed: true, realizedPnl, proceeds });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+/* POST place order (with optional SL/TP attachments) */
 router.post('/', auth, async (req, res) => {
   try {
-    const { side, pair, type = 'limit', price, amount, conditionalType, triggerPrice } = req.body;
+    const { side, pair, type = 'limit', price, amount, stopLoss, takeProfit } = req.body;
 
     if (!['buy', 'sell'].includes(side)) return res.status(400).json({ error: 'Invalid side' });
     if (!isSupported(pair)) return res.status(400).json({ error: 'Unsupported pair' });
@@ -229,10 +254,24 @@ router.post('/', auth, async (req, res) => {
     const amt = Number(amount);
     if (!amt || amt <= 0) return res.status(400).json({ error: 'Invalid amount' });
 
+    const sl = Number(stopLoss) || 0;
+    const tp = Number(takeProfit) || 0;
+
+    // Sanity checks for SL/TP
+    const fillPriceEstimate = type === 'market' ? mid : Number(price) || mid;
+    if (sl > 0 && side === 'buy' && sl >= fillPriceEstimate)
+      return res.status(400).json({ error: 'Stop-loss must be below entry price for buy orders' });
+    if (tp > 0 && side === 'buy' && tp <= fillPriceEstimate)
+      return res.status(400).json({ error: 'Take-profit must be above entry price for buy orders' });
+    if (sl > 0 && side === 'sell' && sl <= fillPriceEstimate)
+      return res.status(400).json({ error: 'Stop-loss must be above entry price for sell orders' });
+    if (tp > 0 && side === 'sell' && tp >= fillPriceEstimate)
+      return res.status(400).json({ error: 'Take-profit must be below entry price for sell orders' });
+
     const [base, quote] = pair.split('/');
     const user = await User.findById(req.user._id);
 
-    // MARKET ORDER — instant fill at mid
+    // MARKET — instant fill
     if (type === 'market') {
       const fillPrice = mid;
       const cost = fillPrice * amt;
@@ -249,11 +288,12 @@ router.post('/', auth, async (req, res) => {
         user.balances[quote] = (user.balances[quote] || 0) + cost;
       }
       await user.save();
-      await upsertPosition(user._id, pair, base, side === 'buy' ? amt : -amt, fillPrice);
+      await upsertPosition(user._id, pair, base, side === 'buy' ? amt : -amt, fillPrice, sl, tp);
 
       const order = await Order.create({
         user: user._id, side, pair, type: 'market',
-        price: fillPrice, amount: amt, filled: amt, status: 'filled'
+        price: fillPrice, amount: amt, filled: amt, status: 'filled',
+        stopLoss: sl, takeProfit: tp
       });
 
       await Transaction.create({
@@ -261,46 +301,16 @@ router.post('/', auth, async (req, res) => {
         currency: side === 'buy' ? base : quote,
         amount: side === 'buy' ? amt : cost,
         status: 'completed',
-        note: `Market ${side.toUpperCase()} ${amt} ${base} @ ${fillPrice} ${quote}`
+        note: `Market ${side.toUpperCase()} ${amt} ${base} @ ${fillPrice} ${quote}${sl ? ` · SL ${sl}` : ''}${tp ? ` · TP ${tp}` : ''}`
       });
 
       await notify(user._id, 'system', 'Market order filled',
-        `${side.toUpperCase()} ${amt} ${base} @ ${fillPrice} ${quote}`);
+        `${side.toUpperCase()} ${amt} ${base} @ ${fillPrice} ${quote}${sl ? ` · SL ${sl}` : ''}${tp ? ` · TP ${tp}` : ''}`);
 
       return res.json(order);
     }
 
-    // SL/TP order — lock funds, wait for trigger
-    if (conditionalType === 'stop_loss' || conditionalType === 'take_profit') {
-      const tp = Number(triggerPrice);
-      if (!tp || tp <= 0) return res.status(400).json({ error: 'Invalid trigger price' });
-
-      if (side === 'buy') {
-        const cost = tp * amt;
-        if (user.balances[quote] < cost)
-          return res.status(400).json({ error: `Insufficient ${quote}` });
-        user.balances[quote] -= cost;
-        user.locked[quote] = (user.locked[quote] || 0) + cost;
-      } else {
-        if (user.balances[base] < amt)
-          return res.status(400).json({ error: `Insufficient ${base}` });
-        user.balances[base] -= amt;
-        user.locked[base] = (user.locked[base] || 0) + amt;
-      }
-      await user.save();
-
-      const order = await Order.create({
-        user: user._id, side, pair, type: 'limit',
-        price: tp, amount: amt,
-        conditionalType, triggerPrice: tp
-      });
-      await notify(user._id, 'system',
-        `${conditionalType === 'stop_loss' ? 'Stop-Loss' : 'Take-Profit'} set`,
-        `${side.toUpperCase()} ${amt} ${base} trigger @ ${tp} ${quote}`);
-      return res.json(order);
-    }
-
-    // LIMIT order (unchanged)
+    // LIMIT — lock funds, wait for fill
     const p = Number(price) || mid;
     if (p <= 0) return res.status(400).json({ error: 'Invalid price' });
 
@@ -319,7 +329,8 @@ router.post('/', auth, async (req, res) => {
     await user.save();
 
     const order = await Order.create({
-      user: user._id, side, pair, type: 'limit', price: p, amount: amt
+      user: user._id, side, pair, type: 'limit', price: p, amount: amt,
+      stopLoss: sl, takeProfit: tp
     });
 
     const diff = Math.abs(p - mid) / mid;
@@ -328,12 +339,11 @@ router.post('/', auth, async (req, res) => {
     }
 
     await notify(user._id, 'system', 'Limit order placed',
-      `${side.toUpperCase()} ${amt} ${base} @ ${p} ${quote}`);
+      `${side.toUpperCase()} ${amt} ${base} @ ${p} ${quote}${sl ? ` · SL ${sl}` : ''}${tp ? ` · TP ${tp}` : ''}`);
     res.json(order);
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
-// POST cancel
 router.post('/:id/cancel', auth, async (req, res) => {
   try {
     const order = await Order.findOne({ _id: req.params.id, user: req.user._id });
@@ -365,7 +375,6 @@ router.post('/:id/cancel', auth, async (req, res) => {
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
-// Internal: fill limit order
 async function tryFillLimit(orderId) {
   const order = await Order.findById(orderId);
   if (!order || !['open', 'partial'].includes(order.status)) return;
@@ -379,7 +388,7 @@ async function tryFillLimit(orderId) {
     const cost = order.price * fillAmount;
     user.locked[quote] = Math.max(0, (user.locked[quote] || 0) - cost);
     user.balances[base] = (user.balances[base] || 0) + fillAmount;
-    await upsertPosition(user._id, order.pair, base, fillAmount, order.price);
+    await upsertPosition(user._id, order.pair, base, fillAmount, order.price, order.stopLoss, order.takeProfit);
   } else {
     user.locked[base] = Math.max(0, (user.locked[base] || 0) - fillAmount);
     user.balances[quote] = (user.balances[quote] || 0) + (order.price * fillAmount);

@@ -15,11 +15,12 @@
       <a href="/dashboard.html" class="nav-link">Dashboard</a>
       <a href="/portfolio.html" class="nav-link">Portfolio</a>
       <a href="/orders.html" class="nav-link active">Trade</a>
+      <a href="/copy.html" class="nav-link">Copy</a>
       <a href="/staking.html" class="nav-link">Stake</a>
       <a href="/swap.html" class="nav-link">Swap</a>
       <a href="/wallet.html" class="nav-link">Wallet</a>
       <a href="/profile.html" class="nav-link">Profile</a>
-      <div class="theme-toggle" data-action="toggle-theme">🌓</div>
+      <div class="theme-toggle" data-action="toggle-theme" title="Toggle theme">🌓</div>
       <a href="#" data-action="logout" class="nav-link">Logout</a>
     </div>
   </div>
@@ -27,16 +28,16 @@
   <div class="container">
     <h2>Spot Trading</h2>
 
-    <!-- Pair selector + price header -->
+    <!-- ================= PAIR SELECTOR + PRICE ================= -->
     <div class="card" style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:12px;">
       <div style="display:flex; gap:8px; flex-wrap:wrap;">
-        <div class="net-chip" data-pair="BTC/USDT" onclick="selectPair('BTC/USDT')">BTC / USDT</div>
-<div class="net-chip" data-pair="ETH/USDT" onclick="selectPair('ETH/USDT')">ETH / USDT</div>
-<div class="net-chip" data-pair="SOL/USDT" onclick="selectPair('SOL/USDT')">SOL / USDT</div>
-<div class="net-chip" data-pair="BNB/USDT" onclick="selectPair('BNB/USDT')">BNB / USDT</div>
-<div class="net-chip" data-pair="XRP/USDT" onclick="selectPair('XRP/USDT')">XRP / USDT</div>
-<div class="net-chip" data-pair="ADA/USDT" onclick="selectPair('ADA/USDT')">ADA / USDT</div>
-<div class="net-chip" data-pair="DOGE/USDT" onclick="selectPair('DOGE/USDT')">DOGE / USDT</div>
+        <div class="net-chip active" data-pair="BTC/USDT" onclick="selectPair('BTC/USDT')">BTC / USDT</div>
+        <div class="net-chip" data-pair="ETH/USDT" onclick="selectPair('ETH/USDT')">ETH / USDT</div>
+        <div class="net-chip" data-pair="SOL/USDT" onclick="selectPair('SOL/USDT')">SOL / USDT</div>
+        <div class="net-chip" data-pair="BNB/USDT" onclick="selectPair('BNB/USDT')">BNB / USDT</div>
+        <div class="net-chip" data-pair="XRP/USDT" onclick="selectPair('XRP/USDT')">XRP / USDT</div>
+        <div class="net-chip" data-pair="ADA/USDT" onclick="selectPair('ADA/USDT')">ADA / USDT</div>
+        <div class="net-chip" data-pair="DOGE/USDT" onclick="selectPair('DOGE/USDT')">DOGE / USDT</div>
       </div>
       <div style="text-align:right;">
         <div class="tag">Last price</div>
@@ -44,16 +45,17 @@
       </div>
     </div>
 
-       <!-- Replace the SVG chart card with this -->
-<div class="card">
-  <h3>Price Chart <span id="chart-pair-label" style="color: var(--text-mute); font-weight: 500;">· BTC/USDT</span></h3>
-  <div id="candle-chart" style="width: 100%; height: 380px;"></div>
-</div>
-    
-    <!-- Order book + Place order -->
+    <!-- ================= PRICE CHART ================= -->
+    <div class="card">
+      <h3>Price Chart <span id="chart-pair-label" style="color: var(--text-mute); font-weight: 500;">· BTC/USDT</span></h3>
+      <div id="candle-chart" style="width: 100%; height: 380px;"></div>
+    </div>
+
+    <!-- ================= ORDER BOOK + PLACE ORDER ================= -->
     <div class="grid grid-2" style="align-items: start;">
+
       <!-- ORDER BOOK -->
-      <div class="card">
+      <div class="card" style="display:flex; flex-direction:column;">
         <h3>Order Book</h3>
         <div style="display:grid; grid-template-columns: 1fr 1fr 1fr; gap: 6px; font-size: 11px; color: var(--text-mute); text-transform: uppercase; letter-spacing: .06em; padding-bottom: 8px; border-bottom: 1px solid var(--border);">
           <span>Price</span>
@@ -61,13 +63,10 @@
           <span style="text-align:right;">Total</span>
         </div>
 
-        <!-- Asks (sells) -->
         <div id="asks" style="margin: 8px 0; display:flex; flex-direction:column-reverse; gap: 3px;"></div>
 
-        <!-- Spread -->
         <div id="spread" style="padding: 10px 0; margin: 6px 0; border-top: 1px solid var(--border); border-bottom: 1px solid var(--border); text-align:center; font-size: 16px; font-weight: 700;"></div>
 
-        <!-- Bids (buys) -->
         <div id="bids" style="margin: 8px 0; display:flex; flex-direction:column; gap: 3px;"></div>
       </div>
 
@@ -80,7 +79,13 @@
           <button id="btn-sell" class="secondary" style="flex:1;" onclick="setSide('sell')">Sell</button>
         </div>
 
-        <label>Price (USDT)</label>
+        <label>Order Type</label>
+        <select id="order-type" onchange="updateOrderType()">
+          <option value="limit">Limit</option>
+          <option value="market">Market (instant fill)</option>
+        </select>
+
+        <label id="price-label">Price (USDT)</label>
         <input id="order-price" type="number" step="0.01" placeholder="0.00" />
 
         <label>Amount</label>
@@ -97,39 +102,57 @@
           <div class="row-sub" id="order-avail">—</div>
         </div>
 
-        <label>Order Type</label>
-<select id="order-type" onchange="updateOrderType()">
-  <option value="limit">Limit</option>
-  <option value="market">Market (instant fill)</option>
-  <option value="stop_loss">Stop-Loss</option>
-  <option value="take_profit">Take-Profit</option>
-</select>
+        <details style="margin-top: 14px; margin-bottom: 14px;">
+          <summary class="tag" style="cursor:pointer; padding: 6px 0;">
+            ⚙️ Attach Stop-Loss / Take-Profit (optional)
+          </summary>
+          <div style="padding-top: 10px;">
+            <label>Stop-Loss price</label>
+            <input id="order-sl" type="number" step="0.01" placeholder="Auto-sell on loss" />
 
-<div id="trigger-wrap" style="display:none;">
-  <label>Trigger Price</label>
-  <input id="trigger-price" type="number" step="0.01" placeholder="0.00" />
-</div>
+            <label>Take-Profit price</label>
+            <input id="order-tp" type="number" step="0.01" placeholder="Auto-sell on profit" />
 
-<button style="width:100%; margin-top: 12px;" id="btn-submit" onclick="placeOrder()">Buy BTC</button>
+            <p class="tag" style="margin-top: -6px; margin-bottom: 0;">
+              Applied to the position after your order fills.
+            </p>
+          </div>
+        </details>
+
+        <button style="width:100%; margin-top: 12px;" id="btn-submit" onclick="placeOrder()">Buy BTC</button>
       </div>
     </div>
 
-    <!-- My Orders -->
+    <!-- ================= MY OPEN ORDERS ================= -->
     <div class="card">
       <h3>My Open Orders</h3>
       <div id="my-orders"></div>
     </div>
 
-    <!-- Recent Trades -->
+    <!-- ================= RECENT TRADES ================= -->
     <div class="card">
       <h3>Recent Trades</h3>
       <div id="trades"></div>
     </div>
   </div>
 
+  <!-- ================= CANCEL ORDER MODAL ================= -->
+  <div class="modal" id="cancel-order-modal">
+    <div class="modal-inner glass" style="max-width: 420px;">
+      <div class="modal-head">
+        <h3>Cancel Order</h3>
+        <button class="modal-close" onclick="closeModal('cancel-order-modal')">×</button>
+      </div>
+      <p class="tag" style="margin-bottom: 18px;">Cancel this order and return locked funds to your wallet?</p>
+      <div style="display:flex; gap:10px;">
+        <button class="secondary" style="flex:1;" onclick="closeModal('cancel-order-modal')">Keep Order</button>
+        <button class="danger" style="flex:1;" onclick="confirmCancelOrder()">Cancel Order</button>
+      </div>
+    </div>
+  </div>
+
   <script src="/js/ui.js"></script>
   <script src="/js/auth.js"></script>
-  <script src="/js/prices.js"></script>
   <script src="/js/notifications.js"></script>
   <script src="/js/chart.js"></script>
   <script src="/js/orders.js"></script>

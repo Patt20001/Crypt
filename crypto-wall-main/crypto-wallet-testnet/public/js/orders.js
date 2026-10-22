@@ -165,13 +165,11 @@ window.placeOrder = async () => {
   const price = Number(document.getElementById('order-price').value);
   const amount = Number(document.getElementById('order-amount').value);
   const type = document.getElementById('order-type').value;
-  const triggerPrice = Number(document.getElementById('trigger-price')?.value);
+  const stopLoss = Number(document.getElementById('order-sl')?.value) || 0;
+  const takeProfit = Number(document.getElementById('order-tp')?.value) || 0;
 
   if (type === 'market') {
     if (!amount || amount <= 0) return toast('Enter a valid amount', 'warn');
-  } else if (type === 'stop_loss' || type === 'take_profit') {
-    if (!amount || amount <= 0) return toast('Enter a valid amount', 'warn');
-    if (!triggerPrice || triggerPrice <= 0) return toast('Enter a valid trigger price', 'warn');
   } else {
     if (!price || price <= 0) return toast('Enter a valid price', 'warn');
     if (!amount || amount <= 0) return toast('Enter a valid amount', 'warn');
@@ -191,13 +189,17 @@ window.placeOrder = async () => {
         type,
         price,
         amount,
-        conditionalType: (type === 'stop_loss' || type === 'take_profit') ? type : '',
-        triggerPrice
+        stopLoss,
+        takeProfit
       })
     });
     toast('Order placed', 'success');
     document.getElementById('order-amount').value = '';
     document.getElementById('order-total').textContent = '0.00 USDT';
+    const slEl = document.getElementById('order-sl');
+    const tpEl = document.getElementById('order-tp');
+    if (slEl) slEl.value = '';
+    if (tpEl) tpEl.value = '';
     await Promise.all([loadBalances(), loadMyOrders()]);
   } catch (e) {
     toast(e.message, 'error');
@@ -209,33 +211,36 @@ window.placeOrder = async () => {
 
 window.updateOrderType = () => {
   const type = document.getElementById('order-type').value;
-  const triggerWrap = document.getElementById('trigger-wrap');
   const priceField = document.getElementById('order-price');
+  const priceLabel = document.getElementById('price-label');
 
   if (type === 'market') {
-    triggerWrap.style.display = 'none';
     priceField.disabled = true;
     priceField.value = '';
     priceField.placeholder = 'Fills at market price';
-  } else if (type === 'stop_loss' || type === 'take_profit') {
-    triggerWrap.style.display = 'block';
-    priceField.disabled = true;
-    priceField.value = '';
-    priceField.placeholder = 'Auto-set from trigger';
+    if (priceLabel) priceLabel.textContent = 'Price (at market)';
   } else {
-    triggerWrap.style.display = 'none';
     priceField.disabled = false;
     priceField.placeholder = '0.00';
+    if (priceLabel) priceLabel.textContent = 'Price (USDT)';
   }
 };
 
 window.cancelOrder = async (id) => {
-  if (!confirm('Cancel this order?')) return;
+  openModal('cancel-order-modal');
+  window.__cancelOrderId = id;
+};
+
+window.confirmCancelOrder = async () => {
+  const id = window.__cancelOrderId;
+  if (!id) return;
+  closeModal('cancel-order-modal');
   try {
     await api(`/api/orders/${id}/cancel`, { method: 'POST' });
     toast('Order cancelled', 'success');
     await Promise.all([loadBalances(), loadMyOrders()]);
   } catch (e) { toast(e.message, 'error'); }
+  window.__cancelOrderId = null;
 };
 
 // Close modal on backdrop click

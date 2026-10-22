@@ -1,29 +1,23 @@
-const Order = require('../models/Order');
+const Position = require('../models/Position');
 const User = require('../models/User');
 const Transaction = require('../models/Transaction');
 const { notify } = require('./notify');
 
-/* In-memory cache of prices, refreshed every cycle */
 const priceCache = {};
 
 async function fetchPrice(pair) {
   const symbol = pair.replace('/', '').toUpperCase();
   try {
-    const res = await fetch(
-      `https://api.binance.com/api/v3/ticker/price?symbol=${symbol}`,
-      { signal: AbortSignal.timeout(3000) }
-    );
+    const res = await fetch(`https://api.binance.com/api/v3/ticker/price?symbol=${symbol}`,
+      { signal: AbortSignal.timeout(3000) });
     if (res.ok) {
       const j = await res.json();
       return parseFloat(j.price);
     }
   } catch {}
-  // Bybit fallback
   try {
-    const res = await fetch(
-      `https://api.bybit.com/v5/market/tickers?category=spot&symbol=${symbol}`,
-      { signal: AbortSignal.timeout(3000) }
-    );
+    const res = await fetch(`https://api.bybit.com/v5/market/tickers?category=spot&symbol=${symbol}`,
+      { signal: AbortSignal.timeout(3000) });
     if (res.ok) {
       const j = await res.json();
       return parseFloat(j.result?.list?.[0]?.lastPrice);
@@ -32,92 +26,58 @@ async function fetchPrice(pair) {
   return null;
 }
 
-/* Fire a stop-loss or take-profit order */
-async function fireConditionalOrder(order, currentPrice) {
-  try {
-    const user = await User.findById(order.user);
-    if (!user) return;
+async function closePosition(pos, price, reason) {
+  const user = await User.findById(pos.user);
+  if (!user) return;
 
-    const [base, quote] = order.pair.split('/');
-    const triggerPrice = currentPrice;
+  const [base, quote] = pos.pair.split('/');
+  const proceeds = price * pos.amount;
+  user.balances[base] = Math.max(0, (user.balances[base] || 0) - pos.amount);
+  user.balances[quote] = (user.balances[quote] || 0) + proceeds;
+  await user.save();
 
-    // Fill the order at current market price (not the trigger price)
-    const cost = triggerPrice * order.amount;
-    const refund = order.price * order.amount;    // locked at original price
+  const pnl = pos.amount * (price - pos.avgCost);
+  pos.realized += pnl;
+  pos.amount = 0;
+  pos.avgCost = 0;
+  pos.stopLoss = 0;
+  pos.takeProfit = 0;
+  pos.updatedAt = new Date();
+  await pos.save();
 
-    if (order.side === 'buy') {
-      // Buy order SL/TP - release locked quote, add base
-      user.locked[quote] = Math.max(0, (user.locked[quote] || 0) - refund);
-      user.balances[base] = (user.balances[base] || 0) + order.amount;
-    } else {
-      // Sell order SL/TP - release locked base, add quote
-      user.locked[base] = Math.max(0, (user.locked[base] || 0) - order.amount);
-      user.balances[quote] = (user.balances[quote] || 0) + cost;
-    }
-    await user.save();
+  await Transaction.create({
+    user: user._id, type: 'earn',
+    currency: quote, amount: proceeds, status: 'completed',
+    note: `${reason} on ${pos.pair} @ ${price.toFixed(2)} · PnL ${pnl >= 0 ? '+' : ''}${pnl.toFixed(2)}`
+  });
 
-    order.status = 'filled';
-    order.filled = order.amount;
-    order.updatedAt = new Date();
-    order.triggerPrice = triggerPrice;
-    await order.save();
-
-    await Transaction.create({
-      user: user._id,
-      type: 'earn',
-      currency: order.side === 'buy' ? base : quote,
-      amount: order.side === 'buy' ? order.amount : cost,
-      status: 'completed',
-      note: `${order.conditionalType.toUpperCase()} triggered at ${triggerPrice} · ${order.side.toUpperCase()} ${order.amount} ${base}`
-    });
-
-    await notify(
-      user._id, 'system',
-      `${order.conditionalType === 'stop_loss' ? 'Stop-Loss' : 'Take-Profit'} triggered`,
-      `${order.side.toUpperCase()} ${order.amount} ${base} @ ${triggerPrice.toFixed(2)} ${quote}`
-    );
-
-    console.log(`✅ ${order.conditionalType} fired for ${order.pair} at ${triggerPrice}`);
-  } catch (e) {
-    console.error('fireConditionalOrder error:', e.message);
-  }
+  await notify(user._id, 'system', `${reason} triggered`,
+    `Closed ${pos.pair} @ ${price.toFixed(2)} · PnL ${pnl >= 0 ? '+' : ''}${pnl.toFixed(2)} USDT`);
 }
 
-/* Main loop */
-async function scanConditionals() {
+async function scanPositions() {
   try {
-    const pending = await Order.find({
-      status: 'open',
-      conditionalType: { $in: ['stop_loss', 'take_profit'] }
-    });
+    const positions = await Position.find({ amount: { $gt: 0 } });
+    if (!positions.length) return;
 
-    if (!pending.length) return;
-
-    // Group by pair to avoid fetching the same price twice
-    const pairs = [...new Set(pending.map(o => o.pair))];
-
+    const pairs = [...new Set(positions.map(p => p.pair))];
     for (const pair of pairs) {
       const price = await fetchPrice(pair);
       if (!price) continue;
       priceCache[pair] = price;
 
-      const toFire = pending.filter(o => o.pair === pair && (
-        // Stop-loss on a sell order: price drops below trigger
-        (o.conditionalType === 'stop_loss' && o.side === 'sell' && price <= o.triggerPrice) ||
-        // Stop-loss on a buy order: price rises above trigger (buying to cover short)
-        (o.conditionalType === 'stop_loss' && o.side === 'buy' && price >= o.triggerPrice) ||
-        // Take-profit on a sell: price rises above trigger
-        (o.conditionalType === 'take_profit' && o.side === 'sell' && price >= o.triggerPrice) ||
-        // Take-profit on a buy: price drops below trigger
-        (o.conditionalType === 'take_profit' && o.side === 'buy' && price <= o.triggerPrice)
-      ));
+      const activePositions = positions.filter(p => p.pair === pair);
 
-      for (const order of toFire) {
-        await fireConditionalOrder(order, price);
+      for (const pos of activePositions) {
+        if (pos.takeProfit > 0 && price >= pos.takeProfit) {
+          await closePosition(pos, price, 'Take-Profit');
+        } else if (pos.stopLoss > 0 && price <= pos.stopLoss) {
+          await closePosition(pos, price, 'Stop-Loss');
+        }
       }
     }
   } catch (e) {
-    console.error('scanConditionals error:', e.message);
+    console.error('scanPositions error:', e.message);
   }
 }
 
@@ -125,15 +85,12 @@ let intervalHandle = null;
 
 function start() {
   if (intervalHandle) return;
-  console.log('📊 Conditional order scanner started');
-  intervalHandle = setInterval(scanConditionals, 10_000);   // every 10s
+  console.log('📊 Position SL/TP scanner started');
+  intervalHandle = setInterval(scanPositions, 10_000);
 }
 
 function stop() {
-  if (intervalHandle) {
-    clearInterval(intervalHandle);
-    intervalHandle = null;
-  }
+  if (intervalHandle) { clearInterval(intervalHandle); intervalHandle = null; }
 }
 
 module.exports = { start, stop, priceCache, fetchPrice };

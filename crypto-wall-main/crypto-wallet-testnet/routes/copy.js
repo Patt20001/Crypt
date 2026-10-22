@@ -230,7 +230,7 @@ router.get('/admin/relations', auth, async (req, res) => {
     if (req.user.role !== 'admin') return res.status(403).json({ error: 'Admin only' });
     const relations = await CopyRelation.find()
       .populate('follower', 'username email')
-      .populate('trader', 'displayName tier')
+      .populate('trader', 'displayName tier performanceFee platformFee')
       .sort({ createdAt: -1 });
     res.json(relations);
   } catch (e) { res.status(500).json({ error: e.message }); }
@@ -376,6 +376,44 @@ router.post('/import', auth, upload.single('file'), async (req, res) => {
   } catch (e) {
     res.status(500).json({ error: e.message });
   }
+});
+
+/* POST set profit-sharing fee for a trader — admin only */
+router.post('/admin/traders/:id/fees', auth, async (req, res) => {
+  try {
+    if (req.user.role !== 'admin') return res.status(403).json({ error: 'Admin only' });
+    const { performanceFee, platformFee } = req.body;
+    const perf = Number(performanceFee);
+    const plat = Number(platformFee);
+    if (perf < 0 || perf > 50) return res.status(400).json({ error: 'Performance fee must be 0–50%' });
+    if (plat < 0 || plat > 20) return res.status(400).json({ error: 'Platform fee must be 0–20%' });
+
+    const trader = await CopyTrader.findByIdAndUpdate(
+      req.params.id,
+      { performanceFee: perf, platformFee: plat },
+      { new: true }
+    );
+    if (!trader) return res.status(404).json({ error: 'Trader not found' });
+    res.json(trader);
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+/* POST adjust copy relation PnL — admin only (for demos/support) */
+router.post('/admin/relations/:id/adjust', auth, async (req, res) => {
+  try {
+    if (req.user.role !== 'admin') return res.status(403).json({ error: 'Admin only' });
+    const { amount, reason } = req.body;
+    const amt = Number(amount);
+    if (!amt) return res.status(400).json({ error: 'Amount required' });
+
+    const rel = await CopyRelation.findById(req.params.id).populate('trader');
+    if (!rel) return res.status(404).json({ error: 'Relation not found' });
+
+        rel.pnl = (rel.pnl || 0) + amt;
+    await rel.save();
+
+    res.json({ relation: rel, adjustment: amt });
+  } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
 module.exports = router;

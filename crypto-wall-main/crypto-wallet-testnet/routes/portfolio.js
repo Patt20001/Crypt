@@ -44,7 +44,6 @@ router.get('/', auth, async (req, res) => {
   const prices = await fetchPrices();
   const currentUsd = await snapshotToday(user, prices);
 
-  // Seed 30d history if sparse
   const existing = await PortfolioSnapshot.find({ user: user._id }).sort({ date: 1 });
   if (existing.length < 15) {
     const now = new Date();
@@ -73,8 +72,7 @@ router.get('/', auth, async (req, res) => {
   const total = holdings.reduce((s, h) => s + h.usd, 0);
   holdings.forEach(h => h.pct = total > 0 ? (h.usd / total) * 100 : 0);
 
-  // PnL — merge positions with live prices
-  const positions = await Position.find({ user: user._id });
+  const positions = await Position.find({ user: user._id, amount: { $gt: 0 } });
   const positionsWithPnl = positions.map(p => {
     const currentPrice = prices[p.base] || p.avgCost;
     const marketValue = p.amount * currentPrice;
@@ -82,10 +80,13 @@ router.get('/', auth, async (req, res) => {
     const unrealized = marketValue - costBasis;
     const unrealizedPct = costBasis > 0 ? (unrealized / costBasis) * 100 : 0;
     return {
+      _id: p._id,
       pair: p.pair, base: p.base,
       amount: p.amount, avgCost: p.avgCost, currentPrice,
       marketValue, costBasis, unrealized, unrealizedPct,
-      realized: p.realized
+      realized: p.realized,
+      stopLoss: p.stopLoss || 0,
+      takeProfit: p.takeProfit || 0
     };
   });
 
