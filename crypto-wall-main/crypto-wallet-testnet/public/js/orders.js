@@ -3,6 +3,7 @@ let currentPair = 'BTC/USDT';
 let currentSide = 'buy';
 let bookInterval = null;
 let tradesInterval = null;
+let positionsInterval = null;
 let balances = { USDT: 0, BTC: 0, ETH: 0 };
 
 if (user) {
@@ -10,19 +11,18 @@ if (user) {
 }
 
 async function init() {
+  await selectPair(currentPair);
   await loadBalances();
   await loadMyOrders();
-
-  // Initialize chart FIRST so it has a canvas to draw into
-  if (window.initTradeChart) {
-    await window.initTradeChart(currentPair);
-  }
-
-  // Then select the pair (which triggers book/trades loading)
-  await selectPair(currentPair);
+  await loadMyPositions();   // 👈 NEW
 
   bookInterval = setInterval(refreshBook, 2000);
   tradesInterval = setInterval(refreshTrades, 5000);
+  positionsInterval = setInterval(loadMyPositions, 15000);   // 👈 auto-refresh positions every 15s
+
+  if (window.initTradeChart) {
+    await window.initTradeChart(currentPair);
+  }
 }
 
 window.selectPair = async function (pair) {
@@ -200,7 +200,7 @@ window.placeOrder = async () => {
     const tpEl = document.getElementById('order-tp');
     if (slEl) slEl.value = '';
     if (tpEl) tpEl.value = '';
-    await Promise.all([loadBalances(), loadMyOrders()]);
+        await Promise.all([loadBalances(), loadMyOrders(), loadMyPositions()]);
   } catch (e) {
     toast(e.message, 'error');
   } finally {
@@ -238,9 +238,144 @@ window.confirmCancelOrder = async () => {
   try {
     await api(`/api/orders/${id}/cancel`, { method: 'POST' });
     toast('Order cancelled', 'success');
-    await Promise.all([loadBalances(), loadMyOrders()]);
+        await Promise.all([loadBalances(), loadMyOrders(), loadMyPositions()]);
   } catch (e) { toast(e.message, 'error'); }
   window.__cancelOrderId = null;
+};
+
+/* ============================================================
+   MY POSITIONS (filled orders, live PnL, close button)
+   ============================================================ */
+async function loadMyPositions() {
+  const el = document.getElementById('my-positions');
+  if (!el) return;
+  el.innerHTML = '<div class="skeleton skeleton-row"></div>'.repeat(2);
+
+  try {
+    // Get both the raw positions and portfolio PnL data
+    const [positions, portfolio] = await Promise.all([
+      api('/api/orders/positions'),
+      api('/api/portfolio').catch(() => null)
+    ]);
+
+    if (!positions.length) {
+      el.innerHTML = '<div class="empty">No open positions. Place a buy order to open one.</div>';
+      return;
+    }
+
+    // Match with PnL data from portfolio
+    const pnlMap = {};
+    if (portfolio?.pnl?.positions) {
+      portfolio.pnl.positions.forEach(p => {
+        pnlMap[p.pair] = p;
+      });
+    }
+
+    el.innerHTML = `
+      <div class="table-wrap"><table>
+        <thead>
+          <tr>
+            <th>Pair</th>
+            <th>Amount</th>
+            <th>Avg Cost</th>
+            <th>Current</th>
+            <th>Unrealized PnL</th>
+            <th>SL / TP</th>
+            <th>Actions</th>
+          </tr>
+        </thead>
+        <tbody>
+          ${positions.map(pos => {
+            const pnl = pnlMap[pos.pair] || {};
+            const unrealized = pnl.unrealized || 0;
+            const unrealizedPct = pnl.unrealizedPct || 0;
+            const currentPrice = pnl.currentPrice || pos.avgCost;
+
+            return `
+              <tr>
+                <td style="font-weight:600;">${pos.pair}</td>
+                <td>${pos.amount.toFixed(6)}</td>
+                <td>$${pos.avgCost.toFixed(2)}</td>
+                <td>$${currentPrice.toFixed(2)}</td>
+                <td style="color: ${unrealized >= 0 ? 'var(--accent)' : '#fca5a5'}; font-weight:600;">
+                  ${unrealized >= 0 ? '+' : ''}${unrealized.toFixed(2)} (${unrealizedPct.toFixed(2)}%)
+                </td>
+                <td class="tag">
+                  ${pos.stopLoss ? `SL $${pos.stopLoss.toFixed(2)}` : '—'}
+                  /
+                  ${pos.takeProfit ? `TP $${pos.takeProfit.toFixed(2)}` : '—'}
+                </td>
+                <td>
+                  <button class="danger sm" onclick="openClosePositionTrade('${pos._id}', '${pos.pair}')">
+                    Close
+                  </button>
+                </td>
+              </tr>`;
+          }).join('')}
+        </tbody>
+      </table></div>`;
+  } catch (e) {
+    el.innerHTML = `<div class="empty">Failed to load positions: ${e.message}</div>`;
+  }
+}
+
+window.openClosePositionTrade = async (posId, pair) => {
+  try {
+    const positions = await api('/api/orders/positions');
+    const pos = positions.find(p => p._id === posId);
+    if (!pos) return toast('Position not found', 'error');
+
+    const portfolio = await api('/api/portfolio');
+    const row = portfolio.pnl?.positions?.find(p => p.pair === pair) || {};
+
+    document.getElementById('close-pos-body').innerHTML = `
+      <div style="padding: 14px; background: rgba(148,163,184,.06); border-radius: 10px; margin-bottom: 16px;">
+        <div style="display:flex; justify-content:space-between; margin-bottom: 6px;">
+          <span class="tag">Pair</span>
+          <b>${pos.pair}</b>
+        </div>
+        <div style="display:flex; justify-content:space-between; margin-bottom: 6px;">
+          <span class="tag">Amount</span>
+          <b>${pos.amount.toFixed(6)} ${pos.base}</b>
+        </div>
+        <div style="display:flex; justify-content:space-between; margin-bottom: 6px;">
+          <span class="tag">Avg cost</span>
+          <b>$${pos.avgCost.toFixed(2)}</b>
+        </div>
+        <div style="display:flex; justify-content:space-between; margin-bottom: 6px;">
+          <span class="tag">Current price</span>
+          <b>$${(row.currentPrice || pos.avgCost).toFixed(2)}</b>
+        </div>
+        <div style="display:flex; justify-content:space-between;">
+          <span class="tag">Unrealized PnL</span>
+          <b style="color: ${(row.unrealized || 0) >= 0 ? 'var(--accent)' : '#fca5a5'};">
+            ${(row.unrealized || 0) >= 0 ? '+' : ''}${(row.unrealized || 0).toFixed(2)} USDT
+          </b>
+        </div>
+      </div>
+      <p class="tag" style="margin-bottom: 14px;">
+        The entire position will be sold at market price. Realized PnL will be added to your balance.
+      </p>
+      <div style="display:flex; gap:10px;">
+        <button class="secondary" style="flex:1;" onclick="closeModal('close-position-modal')">Cancel</button>
+        <button class="danger" style="flex:1;" onclick="confirmClosePositionTrade('${pos._id}')">Close Position</button>
+      </div>
+    `;
+    openModal('close-position-modal');
+  } catch (e) {
+    toast(e.message, 'error');
+  }
+};
+
+window.confirmClosePositionTrade = async (posId) => {
+  try {
+    await api(`/api/orders/positions/${posId}/close`, { method: 'POST' });
+    closeModal('close-position-modal');
+    toast('Position closed', 'success');
+    await Promise.all([loadBalances(), loadMyPositions()]);
+  } catch (e) {
+    toast(e.message, 'error');
+  }
 };
 
 // Close modal on backdrop click

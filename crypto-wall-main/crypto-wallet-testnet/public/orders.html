@@ -129,6 +129,13 @@
       <div id="my-orders"></div>
     </div>
 
+        <!-- ================= MY OPEN POSITIONS ================= -->
+    <div class="card">
+      <h3>My Positions</h3>
+      <p class="tag" style="margin-bottom: 12px;">Filled positions with unrealized PnL. Close anytime to sell at market.</p>
+      <div id="my-positions"></div>
+    </div>
+
     <!-- ================= RECENT TRADES ================= -->
     <div class="card">
       <h3>Recent Trades</h3>
@@ -148,6 +155,17 @@
         <button class="secondary" style="flex:1;" onclick="closeModal('cancel-order-modal')">Keep Order</button>
         <button class="danger" style="flex:1;" onclick="confirmCancelOrder()">Cancel Order</button>
       </div>
+    </div>
+  </div>
+
+    <!-- ================= CLOSE POSITION MODAL ================= -->
+  <div class="modal" id="close-position-modal">
+    <div class="modal-inner glass" style="max-width: 460px;">
+      <div class="modal-head">
+        <h3>Close Position</h3>
+        <button class="modal-close" onclick="closeModal('close-position-modal')">×</button>
+      </div>
+      <div id="close-pos-body"></div>
     </div>
   </div>
 
