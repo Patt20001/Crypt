@@ -1,137 +1,173 @@
-/* ============================================================
-   NovaWallet — Wallet page controller
-   Handles: networks, deposit QR, withdraw, address book, limits
-   ============================================================ */
-
 const user = requireAuth();
 
-/* ============================================================
-   MODAL HELPERS
-   ============================================================ */
-function openModal(id) {
-  const m = document.getElementById(id);
-  if (m) m.classList.add('open');
-}
-
-function closeModal(id) {
-  const m = document.getElementById(id);
-  if (m) m.classList.remove('open');
-}
-
-// Hardcoded fallback so page always renders even if /api/networks fails
-const FALLBACK_NETWORKS = [
-  { id: 'TRC20', name: 'Tron (TRC20)',    symbol: 'USDT', minDeposit: 1,  minWithdraw: 10, fee: 1,   confirmations: 19, color: '#ef4444' },
-  { id: 'ERC20', name: 'Ethereum (ERC20)',symbol: 'USDT', minDeposit: 10, minWithdraw: 20, fee: 8,   confirmations: 12, color: '#627eea' },
-  { id: 'BEP20', name: 'BNB Chain (BEP20)',symbol: 'USDT',minDeposit: 1,  minWithdraw: 5,  fee: 0.5, confirmations: 15, color: '#f0b90b' },
-  { id: 'SOL',   name: 'Solana (SPL)',    symbol: 'USDT', minDeposit: 1,  minWithdraw: 1,  fee: 0.1, confirmations: 1,  color: '#14f195' }
-];
-
-let networks = FALLBACK_NETWORKS;
-let selectedNet = FALLBACK_NETWORKS[0];
-let qrInstance = null;
+let networks = [];           // full list from /api/networks
+let balances = {};
+let depositAddresses = {};
+let selectedAsset = 'USDT';
+let selectedNetwork = null;
 
 if (user) {
   document.addEventListener('DOMContentLoaded', init);
 }
 
 async function init() {
-  // 1. Networks — try API, fall back to hardcoded
   try {
-    const fromApi = await api('/api/networks');
-    if (Array.isArray(fromApi) && fromApi.length) {
-      networks = fromApi;
-      selectedNet = networks[0];
-    }
-  } catch (e) {
-    console.warn('Using fallback networks:', e.message);
+    networks = await api('/api/networks');
+  } catch {
+    networks = [];
   }
 
-  renderNetworks();
-  renderNetworkDetail();
+  renderAssetSelector();
+  await loadBalance();
+  selectAsset('USDT');
 
-  // 2. Everything else in parallel, each wrapped so one failure doesn't kill the rest
-  await Promise.allSettled([
-    loadBalance(),
-    loadTxs(),
-    loadLimits(),
-    loadAddressBook()
-  ]);
+  await Promise.allSettled([loadTxs(), loadLimits(), loadAddressBook()]);
 
-  // 3. Fee line live-updates
   const amtInput = document.getElementById('w-amt');
   if (amtInput) amtInput.addEventListener('input', updateFeeLine);
+}
+
+/* ============================================================
+   ASSET SELECTOR (currencies the user has + all supported)
+   ============================================================ */
+function renderAssetSelector() {
+  const el = document.getElementById('asset-selector');
+  if (!el) return;
+
+  const allAssets = new Set();
+  networks.forEach(n => n.currencies.forEach(c => allAssets.add(c.symbol)));
+  const sorted = [...allAssets].sort();
+
+  el.innerHTML = sorted.map(sym => `
+    <div class="net-chip ${selectedAsset === sym ? 'active' : ''}" data-asset="${sym}" onclick="selectAsset('${sym}')">
+      ${sym}
+      <span class="tag" style="margin-left: 6px;">${(balances[sym] || 0).toFixed(sym === 'USDT' ? 2 : 6)}</span>
+    </div>`).join('');
+}
+
+/* ============================================================
+   NETWORK SELECTOR (only networks supporting selected asset)
+   ============================================================ */
+function renderNetworkSelector() {
+  const el = document.getElementById('network-selector');
+  if (!el) return;
+
+  const valid = networks.filter(n =>
+    n.currencies.some(c => c.symbol === selectedAsset)
+  );
+
+  if (!valid.length) {
+    el.innerHTML = '<div class="empty">No networks support this asset</div>';
+    return;
+  }
+
+  el.innerHTML = valid.map(n => {
+    const isActive = selectedNetwork && selectedNetwork.id === n.id;
+    return `
+      <div class="net-chip ${isActive ? 'active' : ''}" data-net="${n.id}" onclick="selectNetwork('${n.id}')">
+        <span class="net-dot" style="background:${n.color}; color:${n.color};"></span>
+        ${n.name}
+      </div>`;
+  }).join('');
+}
+
+function selectAsset(sym) {
+  selectedAsset = sym;
+  renderAssetSelector();
+
+  // Pick first network that supports this asset
+  const valid = networks.filter(n => n.currencies.some(c => c.symbol === sym));
+  selectedNetwork = valid[0] || null;
+
+  renderNetworkSelector();
+  renderAssetDetail();
   updateFeeLine();
 }
 
-/* ---------------- NETWORKS ---------------- */
-function renderNetworks() {
-  const el = document.getElementById('networks');
-  if (!el) return;
-  el.innerHTML = networks.map(n => `
-    <div class="net-chip ${n.id === selectedNet.id ? 'active' : ''}" data-net="${n.id}">
-      <span class="net-dot" style="background:${n.color}; color:${n.color};"></span>
-      ${n.name}
-    </div>`).join('');
-  el.querySelectorAll('.net-chip').forEach(c => {
-    c.addEventListener('click', () => {
-      selectedNet = networks.find(x => x.id === c.dataset.net) || selectedNet;
-      renderNetworks();
-      renderNetworkDetail();
-      updateFeeLine();
-    });
-  });
+function selectNetwork(id) {
+  selectedNetwork = networks.find(n => n.id === id) || null;
+  renderNetworkSelector();
+  renderAssetDetail();
+  updateFeeLine();
 }
 
-function renderNetworkDetail() {
-  const depSym  = document.getElementById('dep-sym');
-  const depNet  = document.getElementById('dep-net');
-  const depMin  = document.getElementById('dep-min');
-  const depConf = document.getElementById('dep-conf');
-  const addrEl  = document.getElementById('dep-addr');
+/* ============================================================
+   RENDER DETAILS (deposit QR, min, fee, balance)
+   ============================================================ */
+function renderAssetDetail() {
+  if (!selectedNetwork) return;
 
-  if (depSym)  depSym.textContent  = selectedNet.symbol;
-  if (depNet)  depNet.textContent  = selectedNet.id;
-  if (depMin)  depMin.textContent  = selectedNet.minDeposit;
-  if (depConf) depConf.textContent = selectedNet.confirmations;
+  const c = selectedNetwork.currencies.find(x => x.symbol === selectedAsset);
+  if (!c) return;
 
-  const address = user.walletAddress || 'N/A';
-  if (addrEl) addrEl.textContent = address;
+  const net = selectedNetwork;
+  const decimals = c.decimals ?? 2;
+
+  // Deposit
+  document.getElementById('dep-currency-label').textContent = selectedAsset;
+  document.getElementById('dep-sym').textContent = selectedAsset;
+  document.getElementById('dep-sym2').textContent = selectedAsset;
+  document.getElementById('dep-net').textContent = net.id;
+  document.getElementById('dep-min').textContent = c.minDeposit;
+  document.getElementById('dep-conf').textContent = net.confirmations;
+
+  const addr = depositAddresses[net.id] || '—';
+  document.getElementById('dep-addr').textContent = addr;
 
   // QR
   const qrEl = document.getElementById('qr');
-  if (!qrEl) return;
   qrEl.innerHTML = '';
-  const payload = `${selectedNet.id}:${address}`;
-
+  const payload = `${selectedAsset}:${net.id}:${addr}`;
   if (window.QRCode) {
     try {
-      qrInstance = new QRCode(qrEl, {
-        text: payload,
-        width: 180,
-        height: 180,
-        colorDark: '#000000',
-        colorLight: '#ffffff',
+      new QRCode(qrEl, {
+        text: payload, width: 180, height: 180,
+        colorDark: '#000000', colorLight: '#ffffff',
         correctLevel: QRCode.CorrectLevel.M
       });
-    } catch (e) {
+    } catch {
       qrEl.innerHTML = `<img src="https://api.qrserver.com/v1/create-qr-code/?size=180x180&data=${encodeURIComponent(payload)}" alt="QR" />`;
     }
   } else {
-    // Fallback to public QR image API
     qrEl.innerHTML = `<img src="https://api.qrserver.com/v1/create-qr-code/?size=180x180&data=${encodeURIComponent(payload)}" alt="QR" />`;
   }
+
+  // Withdraw
+  document.getElementById('wd-currency-label').textContent = selectedAsset;
+  document.getElementById('wd-sym').textContent = selectedAsset;
+  document.getElementById('w-avail').textContent =
+    `${(balances[selectedAsset] || 0).toFixed(decimals)} ${selectedAsset}`;
 }
 
-/* ---------------- BALANCE ---------------- */
+function updateFeeLine() {
+  if (!selectedNetwork) return;
+  const c = selectedNetwork.currencies.find(x => x.symbol === selectedAsset);
+  if (!c) return;
+
+  const amt = Number(document.getElementById('w-amt')?.value) || 0;
+  const decimals = c.decimals ?? 2;
+  document.getElementById('fee-line').textContent =
+    `${c.fee} ${selectedAsset} (${selectedNetwork.id})`;
+  document.getElementById('you-receive').textContent =
+    `≈ ${Math.max(0, amt - c.fee).toFixed(decimals)} ${selectedAsset}`;
+}
+
+/* ============================================================
+   BALANCE
+   ============================================================ */
 async function loadBalance() {
   try {
     const b = await api('/api/wallet/balance');
-    const avail = document.getElementById('w-avail');
-    if (avail) avail.textContent = `${(b.balances?.USDT || 0).toFixed(2)} USDT`;
+    balances = b.balances || {};
+    depositAddresses = b.depositAddresses || {};
+    renderAssetSelector();
+    if (selectedNetwork) renderAssetDetail();
   } catch (e) { console.warn('loadBalance:', e.message); }
 }
 
-/* ---------------- LIMITS ---------------- */
+/* ============================================================
+   LIMITS
+   ============================================================ */
 async function loadLimits() {
   const el = document.getElementById('limits-banner');
   if (!el) return;
@@ -144,7 +180,7 @@ async function loadLimits() {
       el.innerHTML = `
         <div class="card" style="margin-bottom: 18px;">
           <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom: 8px;">
-            <div style="font-weight: 600;">Daily withdrawal limit</div>
+            <div style="font-weight: 600;">Daily USDT withdrawal limit</div>
             <div class="tag">${L.used.toFixed(2)} / ${L.limit} USDT</div>
           </div>
           <div class="progress"><div style="width:${pct}%"></div></div>
@@ -157,7 +193,9 @@ async function loadLimits() {
   } catch (e) { console.warn('loadLimits:', e.message); }
 }
 
-/* ---------------- ADDRESS BOOK ---------------- */
+/* ============================================================
+   ADDRESS BOOK
+   ============================================================ */
 async function loadAddressBook() {
   try {
     const list = await api('/api/addresses');
@@ -165,53 +203,45 @@ async function loadAddressBook() {
     if (!sel) return;
     sel.innerHTML = '<option value="">Address book</option>' +
       list.map(a => `<option value="${a.address}">${a.label} · ${a.network}</option>`).join('');
-  } catch (e) { console.warn('loadAddressBook:', e.message); }
+  } catch {}
 }
 
-window.pickAddress = function (addr) {
+window.pickAddress = (addr) => {
   if (addr) {
-    const input = document.getElementById('w-addr');
-    if (input) input.value = addr;
+    document.getElementById('w-addr').value = addr;
     toast('Address loaded', 'success', 1200);
   }
 };
 
-window.saveAddress = async function () {
-  const input = document.getElementById('w-addr');
-  const address = (input?.value || '').trim();
+window.saveAddress = async () => {
+  const address = document.getElementById('w-addr').value.trim();
   if (!address) return toast('Enter an address first', 'warn');
   const label = prompt('Label for this address', 'My wallet');
   if (!label) return;
   try {
     await api('/api/addresses', {
       method: 'POST',
-      body: JSON.stringify({ label, address, network: selectedNet.id })
+      body: JSON.stringify({ label, address, network: selectedNetwork?.id })
     });
     toast('Address saved', 'success');
     loadAddressBook();
   } catch (e) { toast(e.message, 'error'); }
 };
 
-/* ---------------- FEE LINE ---------------- */
-function updateFeeLine() {
-  if (!selectedNet) return;
-  const amtInput = document.getElementById('w-amt');
-  const amt = Number(amtInput?.value) || 0;
-  const feeEl = document.getElementById('fee-line');
-  const recvEl = document.getElementById('you-receive');
-  if (feeEl) feeEl.textContent = `${selectedNet.fee} USDT (${selectedNet.id})`;
-  if (recvEl) recvEl.textContent = `≈ ${Math.max(0, amt - selectedNet.fee).toFixed(2)} USDT`;
-}
-
-/* ---------------- COPY ADDRESS ---------------- */
-window.copyAddr = function () {
-  const addr = user.walletAddress || '';
+/* ============================================================
+   COPY ADDRESS
+   ============================================================ */
+window.copyAddr = () => {
+  const addr = depositAddresses[selectedNetwork?.id];
   if (!addr) return;
   navigator.clipboard.writeText(addr);
   toast('Address copied', 'success', 1500);
 };
 
-window.deposit = async function () {
+/* ============================================================
+   DEPOSIT
+   ============================================================ */
+window.deposit = async () => {
   const btn = document.getElementById('btn-deposit');
   if (btn) { btn.disabled = true; btn.textContent = 'Submitting…'; }
 
@@ -219,12 +249,11 @@ window.deposit = async function () {
     await api('/api/wallet/deposit', {
       method: 'POST',
       body: JSON.stringify({
-        currency: 'USDT',
-        network: selectedNet.id,
-        note: ''
+        currency: selectedAsset,
+        network: selectedNetwork.id
       })
     });
-    toast('Deposit submitted — awaiting network confirmation', 'success');
+    toast(`${selectedAsset} deposit submitted — awaiting confirmation`, 'success');
     loadTxs();
     loadLimits();
   } catch (e) {
@@ -235,110 +264,62 @@ window.deposit = async function () {
 };
 
 /* ============================================================
-   WITHDRAW — Step 1: validate & open the confirm modal
+   WITHDRAW
    ============================================================ */
-window.withdraw = async function () {
+window.withdraw = async () => {
   const btn = document.getElementById('btn-withdraw');
   const amount = Number(document.getElementById('w-amt')?.value);
   const address = (document.getElementById('w-addr')?.value || '').trim();
 
-  // validation
   if (!amount || amount <= 0) return toast('Enter a valid amount', 'warn');
   if (!address || address.length < 10) return toast('Enter a valid destination address', 'warn');
-  if (amount < selectedNet.minWithdraw) return toast(`Minimum withdrawal is ${selectedNet.minWithdraw} USDT`, 'warn');
 
-  // check if 2FA is on
-  let me = null;
-  try {
-    me = await api('/api/auth/me').then(r => r.user);
-  } catch {}
+  const c = selectedNetwork.currencies.find(x => x.symbol === selectedAsset);
+  if (!c) return;
+  if (amount < c.minWithdraw)
+    return toast(`Minimum withdrawal is ${c.minWithdraw} ${selectedAsset}`, 'warn');
 
-  if (!me) return toast('Could not verify your account', 'error');
-
-  if (me.twoFA) {
-    // Open the 2FA modal
-    document.getElementById('wd-summary-amount').textContent = `${amount} USDT`;
-    document.getElementById('wd-summary-network').textContent = selectedNet.id;
-    document.getElementById('wd-summary-address').textContent = address;
-    document.getElementById('withdraw-2fa-code').value = '';
-    document.getElementById('withdraw-2fa-msg').textContent = '';
-    openModal('withdraw-2fa-modal');
-    setTimeout(() => document.getElementById('withdraw-2fa-code').focus(), 150);
-  } else {
-    // No 2FA — submit directly
-    await submitWithdrawal({ amount, address, code: undefined });
-  }
-};
-
-/* ============================================================
-   WITHDRAW — Step 2a: user confirmed the modal
-   ============================================================ */
-window.confirmWithdrawal = async function () {
-  const code = document.getElementById('withdraw-2fa-code').value.trim();
-  const msg = document.getElementById('withdraw-2fa-msg');
-
-  if (!code) {
-    msg.className = 'error';
-    msg.textContent = 'Enter the 6-digit code';
-    return;
-  }
-
-  const amount = Number(document.getElementById('w-amt')?.value);
-  const address = (document.getElementById('w-addr')?.value || '').trim();
-
-  msg.className = '';
-  msg.textContent = 'Verifying…';
-
-  await submitWithdrawal({ amount, address, code, msgEl: msg });
-};
-
-/* ============================================================
-   WITHDRAW — Step 2b: user cancelled the modal
-   ============================================================ */
-window.cancelWithdrawal = function () {
-  closeModal('withdraw-2fa-modal');
-};
-
-/* ============================================================
-   WITHDRAW — actual submission (used by both paths)
-   ============================================================ */
-async function submitWithdrawal({ amount, address, code, msgEl }) {
-  const btn = document.getElementById('btn-withdraw');
-  const originalText = btn?.textContent;
   if (btn) { btn.disabled = true; btn.textContent = 'Submitting…'; }
 
   try {
+    let code;
+    try {
+      const me = await api('/api/auth/me').then(r => r.user);
+      if (me.twoFA) {
+        code = prompt('Enter the current 6-digit code from your authenticator app');
+        if (!code) {
+          if (btn) { btn.disabled = false; btn.textContent = 'Request Withdrawal'; }
+          return;
+        }
+      }
+    } catch {}
+
     await api('/api/wallet/withdraw', {
       method: 'POST',
       body: JSON.stringify({
         amount,
-        currency: 'USDT',
+        currency: selectedAsset,
         address,
         code,
-        note: `via ${selectedNet.id}`
+        note: `via ${selectedNetwork.id}`
       })
     });
 
-    // success
-    closeModal('withdraw-2fa-modal');
     toast('Withdrawal submitted — processing', 'success');
     document.getElementById('w-amt').value = '';
     document.getElementById('w-addr').value = '';
     loadTxs();
     loadLimits();
   } catch (e) {
-    if (msgEl) {
-      msgEl.className = 'error';
-      msgEl.textContent = e.message;
-    } else {
-      toast(e.message, 'error');
-    }
+    toast(e.message, 'error');
   } finally {
-    if (btn) { btn.disabled = false; btn.textContent = originalText || 'Request Withdrawal'; }
+    if (btn) { btn.disabled = false; btn.textContent = 'Request Withdrawal'; }
   }
-}
+};
 
-/* ---------------- TRANSACTION HISTORY ---------------- */
+/* ============================================================
+   TRANSACTION HISTORY
+   ============================================================ */
 async function loadTxs() {
   const el = document.getElementById('txs');
   if (!el) return;
@@ -352,7 +333,7 @@ async function loadTxs() {
     el.innerHTML = `
       <div class="table-wrap"><table>
         <thead>
-          <tr><th>Date</th><th>Type</th><th>Currency</th><th>Amount</th><th>Status</th><th>Details</th></tr>
+          <tr><th>Date</th><th>Type</th><th>Currency</th><th>Network</th><th>Amount</th><th>Status</th><th>Details</th></tr>
         </thead>
         <tbody>${txs.map(t => {
           const isPendingDeposit = t.type === 'deposit' && t.status === 'pending';
@@ -361,10 +342,11 @@ async function loadTxs() {
             : `<span style="font-weight:600;">${t.amount}</span>`;
 
           return `
-            <tr class="tx-row" onclick="openTxDetail('${t._id}')">
+            <tr>
               <td>${new Date(t.createdAt).toLocaleString()}</td>
               <td style="text-transform: capitalize;">${t.type}</td>
               <td>${t.currency}</td>
+              <td class="tag">${t.network || '—'}</td>
               <td>${amountCell}</td>
               <td><span class="badge ${t.status}">${t.status}</span></td>
               <td class="tag">${t.note || t.address || '-'}</td>
@@ -375,56 +357,3 @@ async function loadTxs() {
     el.innerHTML = `<div class="empty">Could not load transactions: ${e.message}</div>`;
   }
 }
-
-/* ---------------- TX DETAIL MODAL ---------------- */
-window.openTxDetail = async function (txId) {
-  const modal = document.getElementById('tx-modal');
-  const body = document.getElementById('tx-detail-content');
-  if (!modal || !body) return;
-  modal.classList.add('open');
-  body.innerHTML = '<div class="skeleton skeleton-row"></div>'.repeat(3);
-
-  try {
-    const t = await api(`/api/wallet/transactions/${txId}`);
-    const fakeHash = '0x' + Array.from({ length: 64 }, () => '0123456789abcdef'[Math.floor(Math.random()*16)]).join('');
-    const explorer = {
-      TRC20: 'https://tronscan.org/#/transaction/',
-      ERC20: 'https://etherscan.io/tx/',
-      BEP20: 'https://bscscan.com/tx/',
-      SOL:   'https://solscan.io/tx/'
-    }[t.network || 'TRC20'] || 'https://tronscan.org/#/transaction/';
-
-    body.innerHTML = `
-      <div class="row"><div class="row-label">Type</div><div class="row-sub" style="text-transform: capitalize;">${t.type}</div></div>
-      <div class="row"><div class="row-label">Amount</div><div class="row-sub" style="font-weight:600;">${t.amount} ${t.currency}</div></div>
-      <div class="row"><div class="row-label">Status</div><div class="row-sub"><span class="badge ${t.status}">${t.status}</span></div></div>
-      <div class="row"><div class="row-label">Network</div><div class="row-sub">${t.network || 'TRC20'}</div></div>
-      ${t.address ? `<div class="row"><div class="row-label">Address</div><div class="row-sub tx-hash">${t.address}</div></div>` : ''}
-      <div class="row"><div class="row-label">Created</div><div class="row-sub">${new Date(t.createdAt).toLocaleString()}</div></div>
-      <div class="row"><div class="row-label">Tx hash</div><div class="row-sub tx-hash">${fakeHash}</div></div>
-      <div style="margin-top: 14px;">
-        <a class="btn secondary sm" href="${explorer}${fakeHash}" target="_blank">View on explorer ↗</a>
-      </div>
-      <div class="timeline">
-        <div class="timeline-step"><span class="timeline-dot done"></span>Created</div>
-        <div class="timeline-step"><span class="timeline-dot ${t.status === 'pending' ? 'current' : 'done'}"></span>Processing</div>
-        <div class="timeline-step"><span class="timeline-dot ${t.status === 'completed' ? 'done' : ''}"></span>${t.status === 'rejected' ? 'Rejected' : 'Completed'}</div>
-      </div>`;
-  } catch (e) {
-    body.innerHTML = `<div class="empty">${e.message}</div>`;
-  }
-};
-
-// Close modal on backdrop click
-document.addEventListener('click', (e) => {
-  if (e.target.classList.contains('modal') && e.target.classList.contains('open')) {
-    e.target.classList.remove('open');
-  }
-});
-
-// Close modal on Escape
-document.addEventListener('keydown', (e) => {
-  if (e.key === 'Escape') {
-    document.querySelectorAll('.modal.open').forEach(m => m.classList.remove('open'));
-  }
-});

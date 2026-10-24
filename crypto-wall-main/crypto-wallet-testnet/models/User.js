@@ -7,16 +7,16 @@ const userSchema = new mongoose.Schema({
   role:     { type: String, enum: ['user', 'admin'], default: 'user' },
   displayName: { type: String, default: '' },
   country:     { type: String, default: '' },
-    twoFA:             { type: Boolean, default: false },
-  twoFASecret:       { type: String, default: '' },     // base32 TOTP secret
-  twoFAPendingSecret:{ type: String, default: '' },     // secret while setting up (not yet confirmed)
-  twoFARecoveryCodes:{ type: [String], default: [] },   // one-time backup codes
-  kycStatus:   { type: String, enum: ['unverified','pending','verified'], default: 'unverified' },
+  twoFA:       { type: Boolean, default: false },
+  twoFASecret: { type: String, default: '' },
+  twoFAPendingSecret: { type: String, default: '' },
+  twoFARecoveryCodes: { type: [String], default: [] },
+  kycStatus:   { type: String, enum: ['unverified', 'pending', 'verified'], default: 'unverified' },
   kycDocuments: [{
     filename: String, url: String, mimetype: String, size: Number,
     uploadedAt: { type: Date, default: Date.now }
   }],
-    balances: {
+  balances: {
     USDT: { type: Number, default: 0 },
     BTC:  { type: Number, default: 0 },
     ETH:  { type: Number, default: 0 },
@@ -36,15 +36,23 @@ const userSchema = new mongoose.Schema({
     ADA:  { type: Number, default: 0 },
     DOGE: { type: Number, default: 0 }
   },
-  walletAddress: { type: String, default: () => 'T' + Math.random().toString(36).slice(2, 36).toUpperCase() },
+  // 👇 per-network deposit addresses
+  depositAddresses: {
+    TRC20: { type: String, default: '' },
+    ERC20: { type: String, default: '' },
+    BEP20: { type: String, default: '' },
+    SOL:   { type: String, default: '' },
+    BTC:   { type: String, default: '' },
+    XRP:   { type: String, default: '' },
+    ADA:   { type: String, default: '' },
+    DOGE:  { type: String, default: '' }
+  },
   referralCode:  { type: String, unique: true, sparse: true },
   referredBy:    { type: mongoose.Schema.Types.ObjectId, ref: 'User', default: null },
   acceptedTermsAt: { type: Date, default: null },
   tokenVersion:  { type: Number, default: 0 },
   lastLogin: {
-    ip:        String,
-    userAgent: String,
-    at:        Date
+    ip: String, userAgent: String, at: Date
   },
   loginHistory: [{
     ip: String, userAgent: String, at: { type: Date, default: Date.now }

@@ -95,7 +95,7 @@ router.post('/transactions/:id/:action', async (req, res) => {
         if (!received || received <= 0)
           return res.status(400).json({ error: 'Enter the amount received' });
         tx.amount = received;
-        user.balances[tx.currency] += received;
+        user.balances[tx.currency] = (user.balances[tx.currency] || 0) + received;
         await user.save();
 
         // Pay referral bonus on first deposit
@@ -134,7 +134,7 @@ router.post('/transactions/:id/:action', async (req, res) => {
       // Reject: release locked funds back to balance
       if (tx.type === 'withdraw') {
         user.locked[tx.currency] = Math.max(0, (user.locked[tx.currency] || 0) - tx.amount);
-        user.balances[tx.currency] += tx.amount;
+        user.balances[tx.currency] = (user.balances[tx.currency] || 0) + tx.amount;
         await user.save();
       }
       tx.status = 'rejected';

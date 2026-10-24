@@ -11,19 +11,17 @@
 </head>
 <body>
   <div class="nav glass">
-    <div class="brand">
-      <div class="brand-logo">₮</div>
-      <span>Nova<span class="brand-accent">Wallet</span></span>
-    </div>
+    <div class="brand"><div class="brand-logo">₮</div><span>Nova<span class="brand-accent">Wallet</span></span></div>
     <div class="nav-links">
       <a href="/dashboard.html" class="nav-link">Dashboard</a>
       <a href="/portfolio.html" class="nav-link">Portfolio</a>
+      <a href="/orders.html" class="nav-link">Trade</a>
+      <a href="/copy.html" class="nav-link">Copy</a>
       <a href="/staking.html" class="nav-link">Stake</a>
       <a href="/swap.html" class="nav-link">Swap</a>
       <a href="/wallet.html" class="nav-link active">Wallet</a>
-      <a href="/referrals.html" class="nav-link">Refer</a>
       <a href="/profile.html" class="nav-link">Profile</a>
-      <div class="theme-toggle" data-action="toggle-theme" title="Toggle theme">🌓</div>
+      <div class="theme-toggle" data-action="toggle-theme">🌓</div>
       <a href="#" data-action="logout" class="nav-link">Logout</a>
     </div>
   </div>
@@ -33,17 +31,25 @@
 
     <div id="limits-banner"></div>
 
+    <!-- ================= ASSET SELECTOR ================= -->
+    <div class="card">
+      <h3>Select Asset</h3>
+      <div id="asset-selector" style="display:flex; gap:8px; flex-wrap:wrap; margin-top: 10px;"></div>
+    </div>
+
+    <!-- ================= NETWORK SELECTOR (filtered to selected asset) ================= -->
     <div class="card">
       <h3>Select Network</h3>
-      <div id="networks" style="display:flex; gap:8px; flex-wrap:wrap; margin-top: 10px;"></div>
+      <div id="network-selector" style="display:flex; gap:8px; flex-wrap:wrap; margin-top: 10px;"></div>
     </div>
 
     <div class="grid grid-2">
-          <!-- ================= DEPOSIT CARD ================= -->
+      <!-- ================= DEPOSIT ================= -->
       <div class="card qr-card">
-        <h3>Deposit USDT</h3>
+        <h3>Deposit <span id="dep-currency-label">USDT</span></h3>
         <p class="tag" style="margin-bottom: 16px;">
           Send only <b id="dep-sym">USDT</b> on <b id="dep-net">TRC20</b> to this address.
+          Balance updates after network confirmation.
         </p>
 
         <div class="qr-wrap" id="qr"></div>
@@ -54,7 +60,7 @@
         </div>
 
         <p class="tag" style="margin-top: 12px;">
-          Minimum deposit: <span id="dep-min">1</span> USDT ·
+          Minimum deposit: <span id="dep-min">1</span> <span id="dep-sym2">USDT</span> ·
           Confirms in ~<span id="dep-conf">19</span> blocks
         </p>
 
@@ -81,9 +87,10 @@
           I have sent the funds
         </button>
       </div>
-      <!-- ================= WITHDRAW CARD ================= -->
+
+      <!-- ================= WITHDRAW ================= -->
       <div class="card">
-        <h3>Withdraw USDT</h3>
+        <h3>Withdraw <span id="wd-currency-label">USDT</span></h3>
         <p class="tag" style="margin-bottom: 16px;">Withdrawals are reviewed and processed within minutes.</p>
 
         <label>Destination address</label>
@@ -96,18 +103,16 @@
         </div>
         <button class="secondary sm" onclick="saveAddress()" style="margin-bottom:14px;">+ Save this address</button>
 
-        <label>Amount (USDT)</label>
+        <label>Amount (<span id="wd-sym">USDT</span>)</label>
         <input id="w-amt" type="number" placeholder="50" />
 
         <div class="row">
-          <div>
-            <div class="row-label">Network fee</div>
-            <div class="row-sub" id="fee-line">1 USDT (TRC20)</div>
-          </div>
-          <div style="text-align:right;">
-            <div class="row-label">You receive</div>
-            <div class="row-sub" id="you-receive">≈ 0 USDT</div>
-          </div>
+          <div class="row-label">Network fee</div>
+          <div class="row-sub" id="fee-line">1 USDT (TRC20)</div>
+        </div>
+        <div class="row">
+          <div class="row-label">You receive</div>
+          <div class="row-sub" id="you-receive">≈ 0 USDT</div>
         </div>
         <div class="row">
           <div class="row-label">Available balance</div>
@@ -128,77 +133,18 @@
     </div>
   </div>
 
-  <!-- ================= QR SCANNER MODAL ================= -->
+  <!-- QR scanner modal -->
   <div class="modal" id="qr-modal">
     <div class="modal-inner glass">
       <h3>Scan QR</h3>
-      <div class="qr-video-wrap">
-        <video id="qr-video" autoplay muted playsinline></video>
-      </div>
+      <div class="qr-video-wrap"><video id="qr-video" autoplay muted playsinline></video></div>
       <p id="qr-status" class="tag" style="text-align:center; margin-top: 10px;">Initializing…</p>
       <button class="secondary" style="width:100%; margin-top:12px;" onclick="closeQrScanner()">Cancel</button>
     </div>
   </div>
 
-  <!-- ================= TX DETAIL MODAL ================= -->
-  <div class="modal" id="tx-modal">
-    <div class="modal-inner glass" id="tx-modal-body">
-      <h3>Transaction Details</h3>
-      <div id="tx-detail-content"></div>
-      <button class="secondary" style="width:100%; margin-top:16px;" onclick="document.getElementById('tx-modal').classList.remove('open')">Close</button>
-    </div>
-  </div>
-
-   <!-- ================= WITHDRAWAL 2FA MODAL ================= -->
-  <div class="modal" id="withdraw-2fa-modal">
-    <div class="modal-inner glass" style="max-width: 460px;">
-      <div class="modal-head">
-        <h3>Confirm Withdrawal</h3>
-        <button class="modal-close" onclick="cancelWithdrawal()">×</button>
-      </div>
-
-      <div style="
-        padding: 12px 14px;
-        border-radius: 10px;
-        background: rgba(148,163,184,.08);
-        border: 1px solid var(--border);
-        margin-bottom: 18px;
-        font-size: 13px;
-      ">
-        <div style="display:flex; justify-content:space-between; margin-bottom: 6px;">
-          <span class="tag">Amount</span>
-          <b id="wd-summary-amount" style="color: var(--text);">0 USDT</b>
-        </div>
-        <div style="display:flex; justify-content:space-between; margin-bottom: 6px;">
-          <span class="tag">Network</span>
-          <b id="wd-summary-network" style="color: var(--text);">TRC20</b>
-        </div>
-        <div style="display:flex; justify-content:space-between;">
-          <span class="tag">To</span>
-          <b id="wd-summary-address" style="color: var(--text); font-family: monospace; font-size: 11px; word-break: break-all; text-align: right; max-width: 220px;">—</b>
-        </div>
-      </div>
-
-      <label>Authenticator code</label>
-      <input id="withdraw-2fa-code" maxlength="7" placeholder="123 456" autocomplete="one-time-code"
-        style="text-align:center; font-family: monospace; font-size: 22px; letter-spacing: 8px; padding: 14px;" />
-
-      <p class="tag" style="margin-top: -6px; margin-bottom: 12px;">
-        Open Google Authenticator, Authy, or 1Password and enter the current 6-digit code.
-      </p>
-
-      <div id="withdraw-2fa-msg" style="min-height: 18px; margin-bottom: 10px;"></div>
-
-      <div style="display:flex; gap: 10px;">
-        <button class="secondary" style="flex:1;" onclick="cancelWithdrawal()">Cancel</button>
-        <button style="flex:1;" onclick="confirmWithdrawal()">Confirm Withdrawal</button>
-      </div>
-    </div>
-  </div> 
-  
   <script src="/js/ui.js"></script>
   <script src="/js/auth.js"></script>
-  <script src="/js/prices.js"></script>
   <script src="/js/notifications.js"></script>
   <script src="/js/qr-scan.js"></script>
   <script src="/js/wallet.js"></script>
