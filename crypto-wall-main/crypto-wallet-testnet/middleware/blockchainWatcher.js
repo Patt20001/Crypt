@@ -2,7 +2,7 @@ const User = require('../models/User');
 const Transaction = require('../models/Transaction');
 const { notify } = require('./notify');
 
-/* ---------- TronWeb import (v5/v6/v7 compatible) ---------- */
+/* TronWeb import (v5/v6/v7 compatible) */
 let TronWeb;
 try {
   const tronModule = require('tronweb');
@@ -30,26 +30,18 @@ const RPC_URLS = {
   BEP20: process.env.BEP20_RPC_URL || 'https://bsc-rpc.publicnode.com'
 };
 
-/* Limit how many blocks we scan per tick — prevents "max results" errors */
-const MAX_BLOCKS_PER_SCAN = 500;
-
-const lastScannedBlock = { TRC20: 0, ERC20: 0, BEP20: 0 };
-const errorState = { TRC20: 0, ERC20: 0, BEP20: 0 };
+const lastScannedBlock = { TRC20: 0 };
+const errorState = { TRC20: 0 };
 const MAX_REPORTED_ERRORS = 3;
 
 function logOnce(network, msg) {
   if (errorState[network] < MAX_REPORTED_ERRORS) {
     console.warn(`[${network}] ${msg}`);
     errorState[network]++;
-    if (errorState[network] === MAX_REPORTED_ERRORS) {
-      console.warn(`[${network}] further errors suppressed until restart`);
-    }
   }
 }
 
-/* ============================================================
-   TRC20 — TronGrid block scan
-   ============================================================ */
+/* ============ TRC20 polling ============ */
 async function scanTron() {
   if (!TronWeb) return;
   try {
@@ -105,77 +97,10 @@ async function scanTron() {
   }
 }
 
-/* ============================================================
-   ERC20 / BEP20 — EVM block log scan
-   ============================================================ */
-async function scanEvm(network) {
-  try {
-    const { ethers } = require('ethers');
-    const provider = new ethers.JsonRpcProvider(RPC_URLS[network], undefined, {
-      staticNetwork: true,
-      batchMaxCount: 1
-    });
-
-    const currentBlock = await provider.getBlockNumber();
-
-    if (!lastScannedBlock[network]) {
-      lastScannedBlock[network] = currentBlock - 1;
-      return;
-    }
-
-    const fromBlock = lastScannedBlock[network] + 1;
-    const toBlock = Math.min(currentBlock, fromBlock + MAX_BLOCKS_PER_SCAN - 1);
-    if (fromBlock > toBlock) return;
-
-    const contract = new ethers.Contract(
-      USDT_CONTRACTS[network],
-      ['event Transfer(address indexed from, address indexed to, uint256 value)'],
-      provider
-    );
-
-    // Query in smaller chunks to stay under RPC limits
-    const CHUNK = 500;
-    let scanFrom = fromBlock;
-    let allLogs = [];
-
-    while (scanFrom <= toBlock) {
-      const scanTo = Math.min(scanFrom + CHUNK - 1, toBlock);
-      try {
-        const chunkLogs = await contract.queryFilter(
-          contract.filters.Transfer(), scanFrom, scanTo
-        );
-        allLogs = allLogs.concat(chunkLogs);
-      } catch (e) {
-        logOnce(network, `chunk ${scanFrom}-${scanTo}: ${e.message}`);
-        break;
-      }
-      scanFrom = scanTo + 1;
-    }
-
-    for (const log of allLogs) {
-      const toAddress = log.args.to;
-      const amount = Number(log.args.value) / 1e6;
-
-      await handleTransfer({
-        network,
-        toAddress,
-        amount,
-        txHash: log.transactionHash,
-        currency: 'USDT'
-      });
-    }
-
-    lastScannedBlock[network] = toBlock;
-  } catch (e) {
-    logOnce(network, `scan error: ${e.message}`);
-  }
-}
-
-/* ============================================================
-   Universal transfer handler
-   ============================================================ */
+/* ============ Universal transfer handler ============ */
 async function handleTransfer({ network, toAddress, amount, txHash, currency }) {
   try {
+    if (!toAddress) return;
     const user = await User.findOne({ [`depositAddresses.${network}`]: toAddress });
     if (!user) return;
 
@@ -209,9 +134,7 @@ async function handleTransfer({ network, toAddress, amount, txHash, currency }) 
   }
 }
 
-/* ============================================================
-   Confirmation tracker
-   ============================================================ */
+/* ============ Confirmation tracker ============ */
 async function trackConfirmations(txId, txHash, network) {
   const required = REQUIRED_CONFIRMATIONS[network];
   let attempts = 0;
@@ -273,23 +196,14 @@ async function trackConfirmations(txId, txHash, network) {
   }, 15000);
 }
 
-/* ============================================================
-   Start / stop
-   ============================================================ */
+/* ============ Start / stop ============ */
 let scanInterval = null;
 
 function start() {
   if (scanInterval) return;
-  console.log('🔍 Blockchain watcher started (TRC20 / ERC20 / BEP20)');
-  scanInterval = setInterval(async () => {
-    if (TronWeb) await scanTron();
-    await scanEvm('ERC20');
-    await scanEvm('BEP20');
-  }, 30000);
-
-  if (TronWeb) scanTron().catch(() => {});
-  scanEvm('ERC20').catch(() => {});
-  scanEvm('BEP20').catch(() => {});
+  console.log('🔍 Watcher started (TRC20 polling only — EVM via webhooks)');
+  scanInterval = setInterval(scanTron, 30000);
+  scanTron().catch(() => {});
 }
 
 function stop() {

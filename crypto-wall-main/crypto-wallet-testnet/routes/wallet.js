@@ -5,29 +5,48 @@ const { auth } = require('../middleware/auth');
 const { checkWithdrawLimit } = require('../middleware/limits');
 const { notify } = require('../middleware/notify');
 const { deriveAddress } = require('../utils/hdwallet');
+const { addAddressesToWebhook } = require('../utils/alchemyWebhook');
 const router = express.Router();
 
 const SUPPORTED_NETWORKS = ['TRC20', 'ERC20', 'BEP20'];
 
 /* Assign the next available address index, then derive addresses */
 async function ensureAllAddresses(user) {
+  // Assign unique index if new user
   if (user.depositAddressIndex == null) {
     const lastUser = await User.findOne({ depositAddressIndex: { $ne: null } })
       .sort({ depositAddressIndex: -1 });
     user.depositAddressIndex = (lastUser?.depositAddressIndex ?? -1) + 1;
   }
 
+  const SUPPORTED_NETWORKS = ['TRC20', 'ERC20', 'BEP20'];
+  const newAddresses = { ERC20: [], BEP20: [] };
+
   if (!user.depositAddresses) user.depositAddresses = {};
+
   for (const network of SUPPORTED_NETWORKS) {
     if (!user.depositAddresses[network]) {
       try {
         user.depositAddresses[network] = deriveAddress(network, user.depositAddressIndex);
+        if (network === 'ERC20' || network === 'BEP20') {
+          newAddresses[network].push(user.depositAddresses[network].toLowerCase());
+        }
       } catch (e) {
         console.warn(`Could not derive ${network} address for ${user.username}:`, e.message);
       }
     }
   }
+
   await user.save();
+
+  // Register new EVM addresses with Alchemy webhooks (non-blocking)
+  if (newAddresses.ERC20.length) {
+    addAddressesToWebhook('ERC20', newAddresses.ERC20).catch(() => {});
+  }
+  if (newAddresses.BEP20.length) {
+    addAddressesToWebhook('BEP20', newAddresses.BEP20).catch(() => {});
+  }
+
   return user;
 }
 
