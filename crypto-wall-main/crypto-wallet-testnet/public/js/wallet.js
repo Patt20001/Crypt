@@ -241,26 +241,9 @@ window.copyAddr = () => {
 /* ============================================================
    DEPOSIT
    ============================================================ */
+/* Deposits are automatic — this function is disabled */
 window.deposit = async () => {
-  const btn = document.getElementById('btn-deposit');
-  if (btn) { btn.disabled = true; btn.textContent = 'Submitting…'; }
-
-  try {
-    await api('/api/wallet/deposit', {
-      method: 'POST',
-      body: JSON.stringify({
-        currency: selectedAsset,
-        network: selectedNetwork.id
-      })
-    });
-    toast(`${selectedAsset} deposit submitted — awaiting confirmation`, 'success');
-    loadTxs();
-    loadLimits();
-  } catch (e) {
-    toast(e.message, 'error');
-  } finally {
-    if (btn) { btn.disabled = false; btn.textContent = 'I have sent the funds'; }
-  }
+  toast('Deposits are detected automatically. Just send funds to your address.', 'info', 3000);
 };
 
 /* ============================================================

@@ -21,13 +21,18 @@
       <a href="/swap.html" class="nav-link">Swap</a>
       <a href="/wallet.html" class="nav-link active">Wallet</a>
       <a href="/profile.html" class="nav-link">Profile</a>
-      <div class="theme-toggle" data-action="toggle-theme">🌓</div>
+      <div class="theme-toggle" data-action="toggle-theme" title="Toggle theme">🌓</div>
       <a href="#" data-action="logout" class="nav-link">Logout</a>
     </div>
   </div>
 
   <div class="container">
     <h2>Wallet</h2>
+
+    <!-- Warning banner -->
+    <div class="broadcast" style="border-color: rgba(239,68,68,.35); background: linear-gradient(135deg, rgba(239,68,68,.08), rgba(220,38,38,.04));">
+      ⚠️ <b>Live on-chain mode.</b> Deposits are detected automatically — send only supported assets on supported networks. Wrong network = permanent loss.
+    </div>
 
     <div id="limits-banner"></div>
 
@@ -37,7 +42,7 @@
       <div id="asset-selector" style="display:flex; gap:8px; flex-wrap:wrap; margin-top: 10px;"></div>
     </div>
 
-    <!-- ================= NETWORK SELECTOR (filtered to selected asset) ================= -->
+    <!-- ================= NETWORK SELECTOR ================= -->
     <div class="card">
       <h3>Select Network</h3>
       <div id="network-selector" style="display:flex; gap:8px; flex-wrap:wrap; margin-top: 10px;"></div>
@@ -49,7 +54,7 @@
         <h3>Deposit <span id="dep-currency-label">USDT</span></h3>
         <p class="tag" style="margin-bottom: 16px;">
           Send only <b id="dep-sym">USDT</b> on <b id="dep-net">TRC20</b> to this address.
-          Balance updates after network confirmation.
+          Balance updates automatically after network confirmation.
         </p>
 
         <div class="qr-wrap" id="qr"></div>
@@ -68,24 +73,24 @@
           margin-top: 20px;
           padding: 14px 16px;
           border-radius: 12px;
-          background: linear-gradient(135deg, rgba(34,211,238,.08), rgba(74,222,128,.06));
-          border: 1px solid rgba(34,211,238,.22);
+          background: linear-gradient(135deg, rgba(74,222,128,.06), rgba(34,211,238,.05));
+          border: 1px solid rgba(74,222,128,.25);
           font-size: 13px;
           line-height: 1.6;
         ">
           <div style="display:flex; gap:10px; align-items:flex-start;">
-            <span style="font-size: 18px; line-height:1;">💡</span>
+            <span style="font-size: 18px; line-height:1;">✅</span>
             <div>
-              <b>Sent the funds?</b><br>
-              If your deposit doesn't start processing automatically, tap the button below.
-              We'll pick it up on-chain and credit your wallet once confirmed.
+              <b>Live on-chain detection active.</b><br>
+              Deposits are detected automatically within ~30 seconds.
+              Balance credits after <b id="dep-conf2">19</b> confirmations.
             </div>
           </div>
         </div>
 
-        <button style="width:100%; margin-top: 16px;" id="btn-deposit" onclick="deposit()">
-          I have sent the funds
-        </button>
+        <p class="tag" style="margin-top: 14px; text-align:center;">
+          No button to press — just send funds to the address above.
+        </p>
       </div>
 
       <!-- ================= WITHDRAW ================= -->
@@ -147,6 +152,7 @@
   <script src="/js/auth.js"></script>
   <script src="/js/notifications.js"></script>
   <script src="/js/qr-scan.js"></script>
+  <script src="/js/prices.js"></script>
   <script src="/js/wallet.js"></script>
 </body>
 </html>

@@ -7,6 +7,7 @@ const connectDB = require('./config/database');
 const maintenance = require('./middleware/maintenance');
 const marketSync = require('./middleware/marketSync');
 const traderSync = require('./middleware/traderSync');
+const blockchainWatcher = require('./middleware/blockchainWatcher');
 
 const app = express();
 connectDB();
@@ -43,4 +44,5 @@ app.listen(PORT, () => {
   console.log(`🚀 NovaWallet running on http://localhost:${PORT}`);
   marketSync.start();
   traderSync.start();
+  blockchainWatcher.start();
 });

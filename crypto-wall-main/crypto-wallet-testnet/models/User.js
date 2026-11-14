@@ -18,34 +18,19 @@ const userSchema = new mongoose.Schema({
   }],
   balances: {
     USDT: { type: Number, default: 0 },
-    BTC:  { type: Number, default: 0 },
     ETH:  { type: Number, default: 0 },
-    SOL:  { type: Number, default: 0 },
-    BNB:  { type: Number, default: 0 },
-    XRP:  { type: Number, default: 0 },
-    ADA:  { type: Number, default: 0 },
-    DOGE: { type: Number, default: 0 }
+    BNB:  { type: Number, default: 0 }
   },
   locked: {
     USDT: { type: Number, default: 0 },
-    BTC:  { type: Number, default: 0 },
     ETH:  { type: Number, default: 0 },
-    SOL:  { type: Number, default: 0 },
-    BNB:  { type: Number, default: 0 },
-    XRP:  { type: Number, default: 0 },
-    ADA:  { type: Number, default: 0 },
-    DOGE: { type: Number, default: 0 }
+    BNB:  { type: Number, default: 0 }
   },
-  // 👇 per-network deposit addresses
+  depositAddressIndex: { type: Number, default: null },
   depositAddresses: {
     TRC20: { type: String, default: '' },
     ERC20: { type: String, default: '' },
-    BEP20: { type: String, default: '' },
-    SOL:   { type: String, default: '' },
-    BTC:   { type: String, default: '' },
-    XRP:   { type: String, default: '' },
-    ADA:   { type: String, default: '' },
-    DOGE:  { type: String, default: '' }
+    BEP20: { type: String, default: '' }
   },
   referralCode:  { type: String, unique: true, sparse: true },
   referredBy:    { type: mongoose.Schema.Types.ObjectId, ref: 'User', default: null },

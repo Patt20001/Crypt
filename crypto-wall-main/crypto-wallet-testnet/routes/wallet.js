@@ -1,58 +1,40 @@
 const express = require('express');
-const crypto = require('crypto');
 const Transaction = require('../models/Transaction');
 const User = require('../models/User');
 const { auth } = require('../middleware/auth');
 const { checkWithdrawLimit } = require('../middleware/limits');
 const { notify } = require('../middleware/notify');
+const { deriveAddress } = require('../utils/hdwallet');
 const router = express.Router();
 
-/* Generate a realistic-looking deposit address per network */
-function generateAddress(network) {
-  const rand = (len, alphabet) => {
-    let s = '';
-    const bytes = crypto.randomBytes(len);
-    for (let i = 0; i < len; i++) s += alphabet[bytes[i] % alphabet.length];
-    return s;
-  };
+const SUPPORTED_NETWORKS = ['TRC20', 'ERC20', 'BEP20'];
 
-  switch (network) {
-    case 'TRC20': return 'T' + rand(33, 'ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz123456789');
-    case 'ERC20':
-    case 'BEP20': return '0x' + rand(40, '0123456789abcdef');
-    case 'SOL':   return rand(44, 'ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz123456789');
-    case 'BTC':   return 'bc1q' + rand(38, 'abcdefghijklmnopqrstuvwxyz0123456789');
-    case 'XRP':   return 'r' + rand(33, 'ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz123456789');
-    case 'ADA':   return 'addr1' + rand(58, 'abcdefghijkmnopqrstuvwxyz0123456789');
-    case 'DOGE':  return 'D' + rand(33, 'ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz123456789');
-    default:      return '0x' + rand(40, '0123456789abcdef');
+/* Assign the next available address index, then derive addresses */
+async function ensureAllAddresses(user) {
+  if (user.depositAddressIndex == null) {
+    const lastUser = await User.findOne({ depositAddressIndex: { $ne: null } })
+      .sort({ depositAddressIndex: -1 });
+    user.depositAddressIndex = (lastUser?.depositAddressIndex ?? -1) + 1;
   }
-}
 
-/* Ensure the user has a deposit address for the given network */
-function ensureAddress(user, network) {
   if (!user.depositAddresses) user.depositAddresses = {};
-  if (!user.depositAddresses[network]) {
-    user.depositAddresses[network] = generateAddress(network);
+  for (const network of SUPPORTED_NETWORKS) {
+    if (!user.depositAddresses[network]) {
+      try {
+        user.depositAddresses[network] = deriveAddress(network, user.depositAddressIndex);
+      } catch (e) {
+        console.warn(`Could not derive ${network} address for ${user.username}:`, e.message);
+      }
+    }
   }
-  return user.depositAddresses[network];
+  await user.save();
+  return user;
 }
 
 /* GET balance + all deposit addresses */
 router.get('/balance', auth, async (req, res) => {
-  const user = await User.findById(req.user._id);
-  const NETWORKS = ['TRC20', 'ERC20', 'BEP20', 'SOL', 'BTC', 'XRP', 'ADA', 'DOGE'];
-
-  // Ensure all addresses exist
-  let changed = false;
-  NETWORKS.forEach(n => {
-    if (!user.depositAddresses[n]) {
-      user.depositAddresses[n] = generateAddress(n);
-      changed = true;
-    }
-  });
-  if (changed) await user.save();
-
+  let user = await User.findById(req.user._id);
+  user = await ensureAllAddresses(user);
   res.json({
     balances: user.balances,
     locked: user.locked,
@@ -65,8 +47,7 @@ router.get('/limits', auth, async (req, res) => {
   const user = await User.findById(req.user._id);
   const { LIMITS } = require('../middleware/limits');
   const limit = LIMITS[user.kycStatus] ?? 100;
-  const since = new Date();
-  since.setHours(0, 0, 0, 0);
+  const since = new Date(); since.setHours(0, 0, 0, 0);
   const txs = await Transaction.find({
     user: user._id, type: 'withdraw',
     status: { $in: ['pending', 'completed'] },
@@ -92,32 +73,11 @@ router.get('/transactions/:id', auth, async (req, res) => {
   res.json(tx);
 });
 
-/* Deposit — user does NOT specify amount, just currency + network */
+/* Deposits are now created by the blockchain watcher — not users */
 router.post('/deposit', auth, async (req, res) => {
-  const { currency = 'USDT', network = 'TRC20', note = '' } = req.body;
-
-  const requiredConfs = {
-    TRC20: 19, ERC20: 12, BEP20: 15, SOL: 1,
-    BTC: 3, XRP: 1, ADA: 15, DOGE: 6
-  }[network] || 19;
-
-  const user = await User.findById(req.user._id);
-  ensureAddress(user, network);
-  await user.save();
-
-  const tx = await Transaction.create({
-    user: req.user._id,
-    type: 'deposit',
-    currency,
-    amount: 0,
-    status: 'pending',
-    confirmations: 0,
-    requiredConfirmations: requiredConfs,
-    network,
-    note: `Deposit ${currency} via ${network}${note ? ' · ' + note : ''}`,
-    address: user.depositAddresses[network]
+  return res.status(410).json({
+    error: 'Deposits are detected automatically. Send funds to your deposit address — no action needed.'
   });
-  res.json(tx);
 });
 
 /* Withdraw — user specifies amount + address + currency */
@@ -142,7 +102,6 @@ router.post('/withdraw', auth, async (req, res) => {
     if ((user.balances[currency] || 0) < amount)
       return res.status(400).json({ error: `Insufficient ${currency} balance` });
 
-    // USDT-only limit check for simplicity
     if (currency === 'USDT') {
       const check = await checkWithdrawLimit(user, amount);
       if (!check.ok) return res.status(400).json({ error: check.message });
