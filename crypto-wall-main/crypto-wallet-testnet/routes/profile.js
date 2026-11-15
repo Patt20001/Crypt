@@ -35,12 +35,4 @@ router.put('/password', auth, async (req, res) => {
   res.json({ ok: true });
 });
 
-// Rotate wallet address
-router.post('/rotate-address', auth, async (req, res) => {
-  const user = await User.findById(req.user._id);
-  user.walletAddress = 'T' + Math.random().toString(36).slice(2, 36).toUpperCase();
-  await user.save();
-  res.json({ walletAddress: user.walletAddress });
-});
-
 module.exports = router;

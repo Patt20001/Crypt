@@ -2,17 +2,25 @@ const user = requireAuth();
 if (user) {
   document.addEventListener('DOMContentLoaded', async () => {
     const nets = await api('/api/networks');
+
     document.getElementById('nets').innerHTML = nets.map(n => `
       <div class="card">
-        <div style="display:flex; align-items:center; gap:10px; margin-bottom: 12px;">
+        <div style="display:flex; align-items:center; gap:10px; margin-bottom: 14px;">
           <span class="net-dot" style="width:12px; height:12px; background:${n.color}; color:${n.color};"></span>
           <div style="font-weight: 700; font-size: 15px;">${n.name}</div>
         </div>
-        <div class="row"><div class="row-label">Symbol</div><div class="row-sub">${n.symbol}</div></div>
-        <div class="row"><div class="row-label">Min deposit</div><div class="row-sub">${n.minDeposit} USDT</div></div>
-        <div class="row"><div class="row-label">Min withdrawal</div><div class="row-sub">${n.minWithdraw} USDT</div></div>
-        <div class="row"><div class="row-label">Network fee</div><div class="row-sub">${n.fee} USDT</div></div>
+
         <div class="row"><div class="row-label">Confirmations</div><div class="row-sub">${n.confirmations}</div></div>
-      </div>`).join('');
+
+        ${n.currencies.map(c => `
+          <div style="margin-top: 16px; padding-top: 14px; border-top: 1px solid var(--border);">
+            <div style="font-weight: 700; margin-bottom: 10px; color: var(--accent);">${c.symbol}</div>
+            <div class="row"><div class="row-label">Min deposit</div><div class="row-sub">${c.minDeposit} ${c.symbol}</div></div>
+            <div class="row"><div class="row-label">Min withdrawal</div><div class="row-sub">${c.minWithdraw} ${c.symbol}</div></div>
+            <div class="row"><div class="row-label">Network fee</div><div class="row-sub">${c.fee} ${c.symbol}</div></div>
+          </div>
+        `).join('')}
+      </div>
+    `).join('');
   });
 }

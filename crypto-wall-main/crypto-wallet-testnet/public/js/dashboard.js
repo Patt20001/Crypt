@@ -8,10 +8,9 @@ async function init() {
   try {
     // ---- Balances ----
     const bal = await api('/api/wallet/balance');
-    animateNumber(document.getElementById('usdt'), bal.balances.USDT, 2);
-    animateNumber(document.getElementById('btc'),  bal.balances.BTC,  4);
-    animateNumber(document.getElementById('eth'),  bal.balances.ETH,  4);
-    document.getElementById('addr').textContent = bal.walletAddress;
+animateNumber(document.getElementById('usdt'), bal.balances.USDT || 0, 2);
+animateNumber(document.getElementById('eth'),  bal.balances.ETH  || 0, 4);
+animateNumber(document.getElementById('bnb'),  bal.balances.BNB  || 0, 4);
 
     // ---- Account status ----
     const me = await api('/api/auth/me').then(r => r.user);
@@ -75,10 +74,3 @@ function renderTxs(txs) {
       </tbody>
     </table></div>`;
 }
-
-window.copyAddress = () => {
-  const addr = document.getElementById('addr').textContent.trim();
-  if (!addr || addr === 'Loading…') return;
-  navigator.clipboard.writeText(addr);
-  toast('Wallet address copied', 'success', 1600);
-};

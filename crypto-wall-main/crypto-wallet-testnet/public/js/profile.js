@@ -10,7 +10,6 @@ async function init() {
   document.getElementById('email').textContent = u.email;
   document.getElementById('displayName').value = u.displayName || '';
   document.getElementById('country').value = u.country || '';
-  document.getElementById('addr').textContent = u.walletAddress;
 
   renderKyc(u);
   renderDocs(u.kycDocuments || []);
@@ -152,18 +151,6 @@ window.saveProfile = async () => {
     const country = document.getElementById('country').value;
     await api('/api/profile/update', { method: 'PUT', body: JSON.stringify({ displayName, country }) });
     toast('Profile updated', 'success');
-  } catch (e) { toast(e.message, 'error'); }
-};
-
-window.rotate = async () => {
-  if (!confirm('Rotate your wallet address? Old addresses will no longer be accepted.')) return;
-  try {
-    const r = await api('/api/profile/rotate-address', { method: 'POST' });
-    document.getElementById('addr').textContent = r.walletAddress;
-    const stored = JSON.parse(localStorage.getItem('user') || '{}');
-    stored.walletAddress = r.walletAddress;
-    localStorage.setItem('user', JSON.stringify(stored));
-    toast('Wallet address rotated', 'success');
   } catch (e) { toast(e.message, 'error'); }
 };
 
