@@ -243,7 +243,39 @@ window.copyAddr = () => {
    ============================================================ */
 /* Deposits are automatic — this function is disabled */
 window.deposit = async () => {
-  toast('Deposits are detected automatically. Just send funds to your address.', 'info', 3000);
+  const btn = document.getElementById('btn-deposit');
+  const msgEl = document.getElementById('deposit-msg');
+
+  if (btn) { btn.disabled = true; btn.textContent = 'Submitting…'; }
+  if (msgEl) { msgEl.textContent = ''; msgEl.className = ''; }
+
+  try {
+    const res = await api('/api/wallet/deposit', {
+      method: 'POST',
+      body: JSON.stringify({
+        currency: selectedAsset,
+        network: selectedNetwork.id
+      })
+    });
+
+    if (msgEl) {
+      msgEl.className = 'success';
+      msgEl.textContent = `✅ Request submitted — we will verify your ${selectedAsset} deposit on ${selectedNetwork.id} shortly.`;
+    }
+    toast('Deposit request submitted for review', 'success');
+    loadTxs();
+  } catch (e) {
+    if (msgEl) {
+      msgEl.className = 'error';
+      msgEl.textContent = `❌ ${e.message}`;
+    }
+    toast(e.message, 'error');
+  } finally {
+    if (btn) {
+      btn.disabled = false;
+      btn.textContent = "notify team";
+    }
+  }
 };
 
 /* ============================================================

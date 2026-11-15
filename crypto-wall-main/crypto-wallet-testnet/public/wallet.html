@@ -69,28 +69,34 @@
           Confirms in ~<span id="dep-conf">19</span> blocks
         </p>
 
-        <div style="
-          margin-top: 20px;
-          padding: 14px 16px;
-          border-radius: 12px;
-          background: linear-gradient(135deg, rgba(74,222,128,.06), rgba(34,211,238,.05));
-          border: 1px solid rgba(74,222,128,.25);
-          font-size: 13px;
-          line-height: 1.6;
-        ">
-          <div style="display:flex; gap:10px; align-items:flex-start;">
-            <span style="font-size: 18px; line-height:1;">✅</span>
-            <div>
-              <b>Live on-chain detection active.</b><br>
-              Deposits are detected automatically within ~30 seconds.
-              Balance credits after <b id="dep-conf2">19</b> confirmations.
-            </div>
-          </div>
-        </div>
+<div style="
+  margin-top: 14px;
+  padding: 14px 16px;
+  border-radius: 12px;
+  background: rgba(245,158,11,.06);
+  border: 1px solid rgba(245,158,11,.25);
+  font-size: 13px;
+  line-height: 1.6;
+">
+  <div style="display:flex; gap:10px; align-items:flex-start;">
+    <span style="font-size: 18px; line-height:1;">⏳</span>
+    <div>
+      <b>Sent funds but nothing shows up?</b><br>
+      If your deposit isn't detected automatically within 30 minutes,
+      tap the button below to notify our team.
+    </div>
+  </div>
+</div>
 
-        <p class="tag" style="margin-top: 14px; text-align:center;">
-          No button to press — just send funds to the address above.
-        </p>
+<button
+  style="width:100%; margin-top: 14px;"
+  id="btn-deposit"
+  onclick="deposit()"
+>
+  notify team
+</button>
+
+<div id="deposit-msg" style="margin-top: 10px; min-height: 18px; font-size: 13px;"></div>
       </div>
 
       <!-- ================= WITHDRAW ================= -->

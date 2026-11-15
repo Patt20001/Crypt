@@ -92,11 +92,65 @@ router.get('/transactions/:id', auth, async (req, res) => {
   res.json(tx);
 });
 
-/* Deposits are now created by the blockchain watcher — not users */
+/* Manual deposit fallback — creates a pending deposit for admin review */
 router.post('/deposit', auth, async (req, res) => {
-  return res.status(410).json({
-    error: 'Deposits are detected automatically. Send funds to your deposit address — no action needed.'
-  });
+  try {
+    const { currency = 'USDT', network = 'TRC20', note = '' } = req.body;
+
+    const SUPPORTED = {
+      TRC20: ['USDT'],
+      ERC20: ['USDT', 'ETH'],
+      BEP20: ['USDT', 'BNB']
+    };
+    if (!SUPPORTED[network]?.includes(currency)) {
+      return res.status(400).json({ error: `Unsupported asset/network combination` });
+    }
+
+    const requiredConfs = {
+      TRC20: 19, ERC20: 12, BEP20: 15
+    }[network];
+
+    const user = await User.findById(req.user._id);
+
+    // Prevent spamming — limit 1 pending manual deposit per (currency, network) per 10 min
+    const recent = await Transaction.findOne({
+      user: user._id,
+      type: 'deposit',
+      currency,
+      network,
+      status: 'pending',
+      createdAt: { $gte: new Date(Date.now() - 10 * 60 * 1000) }
+    });
+    if (recent) {
+      return res.status(429).json({
+        error: 'A pending deposit request for this asset already exists. Please wait for review.'
+      });
+    }
+
+    const tx = await Transaction.create({
+      user: user._id,
+      type: 'deposit',
+      currency,
+      amount: 0,
+      status: 'pending',
+      confirmations: 0,
+      requiredConfirmations: requiredConfs,
+      network,
+      note: `Manual deposit request — ${currency} via ${network}${note ? ' · ' + note : ''}`,
+      address: user.depositAddresses?.[network] || ''
+    });
+
+    await notify(
+      user._id,
+      'deposit',
+      'Deposit request submitted',
+      `We will verify your ${currency} ${network} deposit shortly.`
+    );
+
+    res.json(tx);
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
 });
 
 /* Withdraw — user specifies amount + address + currency */
