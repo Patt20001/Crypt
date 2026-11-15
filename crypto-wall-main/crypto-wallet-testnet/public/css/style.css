@@ -1047,9 +1047,13 @@ html[data-theme="light"] .nav-drawer-panel {
 @media (max-width: 900px) {
   .nav-links .nav-link,
   .nav-links .theme-toggle,
-  .nav-links .notif-wrap,
   .nav-links .user-wrap {
     display: none !important;
+  }
+  /* Keep the bell visible next to the burger */
+  .nav-links .notif-wrap {
+    display: block !important;
+    margin-right: 8px;
   }
   .nav-burger { display: flex; }
   .nav { padding: 12px 16px; }
@@ -1264,3 +1268,159 @@ html[data-theme="light"] .nav-drawer-panel {
   flex-shrink: 0;
 }
 .theme-toggle:hover { border-color: var(--border-strong); transform: rotate(20deg); }
+
+/* ============ LIGHT MODE — NOTIFICATION PANEL ============ */
+html[data-theme="light"] .notif-panel {
+  background: rgba(255, 255, 255, 0.98) !important;
+  border-color: rgba(15, 23, 42, 0.15) !important;
+  box-shadow: 0 20px 60px -12px rgba(15, 23, 42, 0.25) !important;
+}
+
+html[data-theme="light"] .notif-item:hover {
+  background: rgba(15, 23, 42, 0.04) !important;
+}
+
+html[data-theme="light"] .notif-item.unread {
+  background: rgba(16, 185, 129, 0.08) !important;
+}
+
+html[data-theme="light"] .notif-icon {
+  background: rgba(15, 23, 42, 0.06) !important;
+}
+
+html[data-theme="light"] .notif-title {
+  color: #0f172a !important;
+}
+
+html[data-theme="light"] .notif-body {
+  color: #475569 !important;
+}
+
+html[data-theme="light"] .notif-time {
+  color: #94a3b8 !important;
+}
+
+html[data-theme="light"] .notif-head {
+  border-bottom-color: rgba(15, 23, 42, 0.08) !important;
+}
+
+html[data-theme="light"] .notif-bell {
+  border-color: rgba(15, 23, 42, 0.15) !important;
+  color: #0f172a !important;
+}
+
+html[data-theme="light"] .notif-bell:hover {
+  border-color: rgba(15, 23, 42, 0.28) !important;
+  background: rgba(15, 23, 42, 0.04) !important;
+}
+
+/* The user dropdown had the same issue — fix it too */
+html[data-theme="light"] .user-dropdown,
+html[data-theme="light"] .dropdown {
+  background: rgba(255, 255, 255, 0.98) !important;
+  border-color: rgba(15, 23, 42, 0.15) !important;
+  box-shadow: 0 20px 60px -12px rgba(15, 23, 42, 0.25) !important;
+}
+
+html[data-theme="light"] .dropdown-item {
+  color: #475569 !important;
+}
+
+html[data-theme="light"] .dropdown-item:hover {
+  background: rgba(15, 23, 42, 0.04) !important;
+  color: #0f172a !important;
+}
+
+html[data-theme="light"] .dropdown-name {
+  color: #0f172a !important;
+}
+
+html[data-theme="light"] .dropdown-email {
+  color: #64748b !important;
+}
+
+/* ============ DARK MODE — NOTIFICATION PANEL (solid) ============ */
+.notif-panel {
+  background: rgba(15, 22, 40, 0.98) !important;
+  backdrop-filter: blur(12px) !important;
+  -webkit-backdrop-filter: blur(12px) !important;
+  border-color: rgba(148, 163, 184, 0.22) !important;
+  box-shadow: 0 20px 60px -12px rgba(0, 0, 0, 0.7) !important;
+}
+
+.notif-item:hover {
+  background: rgba(148, 163, 184, 0.08);
+}
+
+.notif-item.unread {
+  background: rgba(74, 222, 128, 0.06);
+}
+
+.notif-title {
+  color: #e6edf7;
+}
+
+.notif-body {
+  color: #94a3b8;
+}
+
+.notif-time {
+  color: #64748b;
+}
+
+/* Same fix for user dropdown in dark mode */
+.user-dropdown,
+.dropdown {
+  background: rgba(15, 22, 40, 0.98) !important;
+  backdrop-filter: blur(12px) !important;
+  -webkit-backdrop-filter: blur(12px) !important;
+  border-color: rgba(148, 163, 184, 0.22) !important;
+  box-shadow: 0 20px 60px -12px rgba(0, 0, 0, 0.7) !important;
+}
+
+/* ============ AVATAR CHIP ============ */
+.user-chip {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 10px 4px 4px;
+  border-radius: 999px;
+  border: 1px solid var(--border);
+  cursor: pointer;
+  transition: all .2s;
+}
+.user-chip:hover {
+  border-color: var(--border-strong);
+  background: rgba(148, 163, 184, 0.06);
+}
+.user-chip .avatar {
+  width: 32px;
+  height: 32px;
+  font-size: 13px;
+}
+.user-caret {
+  color: var(--text-dim);
+  font-size: 10px;
+  transition: transform .2s;
+}
+.user-chip:hover .user-caret {
+  color: var(--text);
+}
+
+/* ============ DROPDOWN HEADER AS LINK ============ */
+.dropdown-header {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 10px;
+  border-bottom: 1px solid var(--border);
+  margin-bottom: 6px;
+  border-radius: 10px;
+  transition: background .15s;
+}
+.dropdown-header:hover {
+  background: rgba(148, 163, 184, 0.06);
+}
+html[data-theme="light"] .dropdown-header:hover {
+  background: rgba(15, 23, 42, 0.04);
+}

@@ -120,12 +120,10 @@ function renderTopNav() {
   const initial = user ? (user.username || '?')[0].toUpperCase() : '?';
   const activeKey = currentPathKey();
 
-  // Build primary links
   const primaryHTML = PRIMARY_LINKS.map(l => `
     <a href="${l.href}" class="nav-link ${activeKey === l.key ? 'active' : ''}">${l.label}</a>
   `).join('');
 
-  // Build secondary links for the user dropdown
   const secondaryHTML = SECONDARY_LINKS.map(l => `
     <a href="${l.href}" class="dropdown-item ${activeKey === l.key ? 'active' : ''}">
       <span class="dropdown-item-icon">${l.icon}</span>
@@ -149,17 +147,19 @@ function renderTopNav() {
     </div>
 
     <div class="user-wrap">
-      <div class="user-chip" data-user-toggle>
+      <div class="user-chip" data-user-toggle title="Menu">
         <div class="avatar">${initial}</div>
+        <span class="user-caret">▾</span>
       </div>
       <div class="user-dropdown glass" id="user-dropdown">
-        <div class="dropdown-header">
+        <a href="/profile.html" class="dropdown-header" style="text-decoration: none; color: inherit;">
           <div class="avatar avatar-lg">${initial}</div>
-          <div style="min-width:0;">
+          <div style="min-width:0; flex:1;">
             <div class="dropdown-name">${user?.username || ''}</div>
             <div class="dropdown-email">${user?.email || ''}</div>
           </div>
-        </div>
+          <span style="color: var(--text-mute); font-size: 14px;">›</span>
+        </a>
         ${secondaryHTML}
         ${isAdmin ? `
           <a href="/admin.html" class="dropdown-item">
@@ -178,16 +178,19 @@ function renderTopNav() {
     <button class="nav-burger" aria-label="Open menu" data-burger>☰</button>
   `;
 
-  // Toggle user dropdown
+  // Toggle user dropdown on chip click
   navLinks.querySelector('[data-user-toggle]').addEventListener('click', (e) => {
     e.stopPropagation();
+    e.preventDefault();
     document.getElementById('user-dropdown')?.classList.toggle('open');
   });
+
+  // Close dropdown on outside click
   document.addEventListener('click', () => {
     document.getElementById('user-dropdown')?.classList.remove('open');
   });
 
-  // Burger
+  // Burger for mobile
   navLinks.querySelector('[data-burger]').addEventListener('click', (e) => {
     e.stopPropagation();
     openMobileNav();
@@ -224,13 +227,14 @@ function buildMobileDrawer() {
         <button class="nav-burger" onclick="closeMobileNav()" aria-label="Close">✕</button>
       </div>
 
-      <div class="nav-drawer-user">
+      <a href="/profile.html" class="nav-drawer-user" style="text-decoration: none; color: inherit;">
         <div class="avatar">${initial}</div>
         <div style="min-width:0; flex:1;">
           <div class="nav-drawer-name">${user?.username || 'Guest'}</div>
           <div class="nav-drawer-email">${user?.email || ''}</div>
         </div>
-      </div>
+        <span style="color: var(--text-mute); font-size: 14px;">›</span>
+      </a>
 
       <nav class="nav-drawer-links">
         ${allLinks.map(l => `
