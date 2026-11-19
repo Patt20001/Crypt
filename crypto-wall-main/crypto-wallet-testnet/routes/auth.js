@@ -32,64 +32,47 @@ function genRecoveryCodes(count = 8) {
 /* ============================================================
    REGISTER
    ============================================================ */
-router.post('/register', async (req, res) => {
-  try {
-    const { username, email, password, referralCode, acceptTerms } = req.body;
-    if (!username || !email || !password)
-      return res.status(400).json({ error: 'All fields required' });
-    if (password.length < 6)
-      return res.status(400).json({ error: 'Password min 6 characters' });
-    if (!acceptTerms)
-      return res.status(400).json({ error: 'You must accept the Terms & Risk Disclosure' });
+async function register() {
+  const username = document.getElementById('username')?.value.trim();
+  const email = document.getElementById('email')?.value.trim();
+  const password = document.getElementById('password')?.value;
+  const referralCode = document.getElementById('referral')?.value.trim();
+  const acceptTerms = document.getElementById('terms')?.checked;
 
-    const exists = await User.findOne({ $or: [{ email }, { username }] });
-    if (exists) return res.status(409).json({ error: 'User already exists' });
-
-    const hashed = await bcrypt.hash(password, 10);
-
-    let referrer = null;
-    if (referralCode) {
-      referrer = await User.findOne({ referralCode: referralCode.toUpperCase() });
-    }
-
-    const user = await User.create({
-      username,
-      email,
-      password: hashed,
-      referralCode: 'NVW' + Math.random().toString(36).slice(2, 8).toUpperCase(),
-      acceptedTermsAt: new Date(),
-      referredBy: referrer?._id || null
-    });
-
-    if (referrer && referrer._id.toString() !== user._id.toString()) {
-      await Referral.create({
-        referrer: referrer._id,
-        referee: user._id,
-        bonusPaid: false
-      });
-      await notify(
-        referrer._id,
-        'referral',
-        'New referral!',
-        `${username} signed up using your code. You'll earn 5 USDT when they make their first deposit.`
-      );
-    }
-
-    await notify(
-      user._id,
-      'system',
-      'Welcome to NovaWallet',
-      'Complete KYC to unlock higher withdrawal limits.'
-    );
-
-    res.json({
-      token: sign(user),
-      user: { id: user._id, username, email, role: user.role }
-    });
-  } catch (e) {
-    res.status(500).json({ error: e.message });
+  if (!username || !email || !password) {
+    return showMsg('Please fill in all required fields');
   }
-});
+  if (!acceptTerms) {
+    return showMsg('You must accept the Terms & Risk Disclosure');
+  }
+
+  const btn = document.querySelector('button[onclick="register()"]');
+  const originalText = btn?.textContent;
+  if (btn) { btn.disabled = true; btn.textContent = 'Creating account…'; }
+
+  try {
+    const r = await fetch(`${API}/api/auth/register`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ username, email, password, referralCode, acceptTerms })
+    });
+    const d = await r.json();
+
+    if (!r.ok) {
+      if (btn) { btn.disabled = false; btn.textContent = originalText; }
+      return showMsg(d.error || 'Registration failed');
+    }
+
+    localStorage.setItem('token', d.token);
+    localStorage.setItem('user', JSON.stringify(d.user));
+
+    // Show onboarding modal
+    showOnboardingModal();
+  } catch (e) {
+    if (btn) { btn.disabled = false; btn.textContent = originalText; }
+    showMsg(e.message || 'Registration failed');
+  }
+}
 
 /* ============================================================
    LOGIN
@@ -331,6 +314,100 @@ router.post('/2fa/recovery-codes', auth, async (req, res) => {
   } catch (e) {
     res.status(500).json({ error: e.message });
   }
+});
+
+/* ============================================================
+   FORGOT PASSWORD — step 1: identify user by email
+   ============================================================ */
+router.post('/forgot-password/start', async (req, res) => {
+  try {
+    const { email } = req.body;
+    if (!email) return res.status(400).json({ error: 'Email required' });
+
+    const user = await User.findOne({ email: email.toLowerCase() });
+    if (!user) {
+      // Don't reveal whether the email exists
+      return res.json({ found: false, questions: [] });
+    }
+
+    if (!user.securityQuestions || user.securityQuestions.length < 3) {
+      return res.json({
+        found: true,
+        hasQuestions: false,
+        message: 'No recovery questions set on this account. Please contact support.'
+      });
+    }
+
+    // Return the questions (without answers) so user can answer them
+    res.json({
+      found: true,
+      hasQuestions: true,
+      questions: user.securityQuestions.map(q => q.question)
+    });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+/* ============================================================
+   FORGOT PASSWORD — step 2: verify answers
+   ============================================================ */
+router.post('/forgot-password/verify', async (req, res) => {
+  try {
+    const { email, answers } = req.body;
+    if (!email || !Array.isArray(answers) || answers.length !== 3)
+      return res.status(400).json({ error: 'Email and 3 answers required' });
+
+    const user = await User.findOne({ email: email.toLowerCase() });
+    if (!user) return res.status(401).json({ error: 'Invalid recovery attempt' });
+
+    // Verify all answers
+    let allMatch = true;
+    for (let i = 0; i < 3; i++) {
+      const stored = user.securityQuestions[i]?.answerHash;
+      if (!stored) { allMatch = false; break; }
+      const ok = await bcrypt.compare(String(answers[i]).trim().toLowerCase(), stored);
+      if (!ok) { allMatch = false; break; }
+    }
+
+    if (!allMatch) {
+      return res.status(401).json({ error: 'One or more answers are incorrect' });
+    }
+
+    // Generate reset token
+    const token = crypto.randomBytes(32).toString('hex');
+    user.resetToken = token;
+    user.resetTokenExpires = new Date(Date.now() + 30 * 60 * 1000); // 30 min
+    await user.save();
+
+    res.json({ ok: true, token });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+/* ============================================================
+   FORGOT PASSWORD — step 3: reset with token
+   ============================================================ */
+router.post('/forgot-password/reset', async (req, res) => {
+  try {
+    const { token, newPassword } = req.body;
+    if (!token || !newPassword) return res.status(400).json({ error: 'Token and password required' });
+    if (newPassword.length < 6) return res.status(400).json({ error: 'Password min 6 chars' });
+
+    const user = await User.findOne({
+      resetToken: token,
+      resetTokenExpires: { $gt: new Date() }
+    });
+    if (!user) return res.status(400).json({ error: 'Invalid or expired token' });
+
+    user.password = await bcrypt.hash(newPassword, 10);
+    user.resetToken = '';
+    user.resetTokenExpires = null;
+    user.tokenVersion = (user.tokenVersion || 0) + 1; // invalidate existing sessions
+    await user.save();
+
+    await notify(user._id, 'security', 'Password reset',
+      'Your password was successfully reset.');
+
+    res.json({ ok: true });
+  } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
 module.exports = router;

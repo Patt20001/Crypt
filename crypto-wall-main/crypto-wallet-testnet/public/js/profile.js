@@ -25,11 +25,23 @@ async function init() {
     }
   });
 
-  // render recovery codes button if enabled
   if (u.twoFA) renderRecoverySection();
 
   setupUploader();
-}
+
+  // ============ NEW LINES ============
+  document.getElementById('firstName').value = u.firstName || '';
+  document.getElementById('lastName').value = u.lastName || '';
+  if (u.dateOfBirth) {
+    document.getElementById('dateOfBirth').value = new Date(u.dateOfBirth).toISOString().split('T')[0];
+  }
+
+  loadSecurityQuestionStatus();
+  renderSelfie(u.kycSelfie);
+  setupSelfieUploader();
+
+  // Onboarding hint (if ?onboarding=1 in URL)
+ 
 
 function renderKyc(u) {
   const pill = document.getElementById('kyc');
@@ -147,9 +159,16 @@ window.removeDoc = async (filename) => {
 /* ============ Existing profile actions ============ */
 window.saveProfile = async () => {
   try {
-    const displayName = document.getElementById('displayName').value;
-    const country = document.getElementById('country').value;
-    await api('/api/profile/update', { method: 'PUT', body: JSON.stringify({ displayName, country }) });
+    await api('/api/profile/update', {
+      method: 'PUT',
+      body: JSON.stringify({
+        displayName: document.getElementById('displayName').value,
+        country: document.getElementById('country').value,
+        firstName: document.getElementById('firstName').value,
+        lastName: document.getElementById('lastName').value,
+        dateOfBirth: document.getElementById('dateOfBirth').value || null
+      })
+    });
     toast('Profile updated', 'success');
   } catch (e) { toast(e.message, 'error'); }
 };
@@ -546,4 +565,251 @@ window.confirmRegenerate = async () => {
     msg.className = 'error';
     msg.textContent = e.message;
   }
+};
+
+let availableQuestions = [];
+
+async function loadSecurityQuestionStatus() {
+  try {
+    const r = await api('/api/profile/security-questions');
+    const el = document.getElementById('sq-status');
+    if (r.hasQuestions) {
+      el.textContent = `Set on ${new Date(r.setAt).toLocaleDateString()}`;
+      el.style.color = 'var(--accent)';
+    } else {
+      el.textContent = 'Not set — required for password recovery';
+      el.style.color = '#fbbf24';
+    }
+  } catch {}
+}
+
+window.openSecurityQuestions = async () => {
+  try {
+    if (!availableQuestions.length) {
+      availableQuestions = await api('/api/profile/security-questions/available');
+    }
+
+    const existing = await api('/api/profile/security-questions');
+
+    document.getElementById('sq-modal-body').innerHTML = `
+      <p class="tag" style="margin-bottom: 14px;">
+        Choose 3 questions. You'll need to answer these to reset your password if you forget it.
+      </p>
+      ${[0, 1, 2].map(i => `
+        <div style="margin-bottom: 16px;">
+          <label>Question ${i + 1}</label>
+          <select id="sq-q-${i}" style="margin-bottom: 8px;">
+            <option value="">— Select a question —</option>
+            ${availableQuestions.map(q => `
+              <option value="${q}" ${existing.questions?.[i] === q ? 'selected' : ''}>${q}</option>
+            `).join('')}
+          </select>
+          <input id="sq-a-${i}" placeholder="Your answer (case-insensitive)" />
+        </div>
+      `).join('')}
+      <label>Confirm your password</label>
+      <input id="sq-pwd" type="password" placeholder="Enter account password" />
+      <div id="sq-msg" style="min-height: 18px; margin-bottom: 10px;"></div>
+      <button style="width:100%" onclick="saveSecurityQuestions()">Save questions</button>
+    `;
+
+    openModal('sq-modal');
+  } catch (e) { toast(e.message, 'error'); }
+};
+
+window.saveSecurityQuestions = async () => {
+  const pwd = document.getElementById('sq-pwd').value;
+  const questions = [0, 1, 2].map(i => ({
+    question: document.getElementById(`sq-q-${i}`).value,
+    answer: document.getElementById(`sq-a-${i}`).value
+  }));
+  const msg = document.getElementById('sq-msg');
+
+  if (!pwd) { msg.className = 'error'; msg.textContent = 'Password required'; return; }
+  for (let i = 0; i < 3; i++) {
+    if (!questions[i].question || !questions[i].answer) {
+      msg.className = 'error'; msg.textContent = `Question ${i + 1} is incomplete`; return;
+    }
+  }
+
+  try {
+    await api('/api/profile/security-questions', {
+      method: 'POST',
+      body: JSON.stringify({ password: pwd, questions })
+    });
+    closeModal('sq-modal');
+    toast('Security questions saved', 'success');
+    loadSecurityQuestionStatus();
+  } catch (e) {
+    msg.className = 'error';
+    msg.textContent = e.message;
+  }
+};
+
+/* ============================================================
+   SELFIE UPLOADER — with camera capture on mobile + desktop
+   ============================================================ */
+// Store camera permission state so we don't spam prompts
+let cameraBlocked = false;
+
+function setupSelfieUploader() {
+  const zone = document.getElementById('selfie-zone');
+  const input = document.getElementById('selfie-file');
+  if (!zone || !input) return;
+
+  zone.addEventListener('click', () => openSelfieCamera());
+
+  input.addEventListener('change', () => {
+    if (input.files[0]) uploadSelfieFile(input.files[0]);
+  });
+}
+
+async function openSelfieCamera() {
+  // If we already know camera is blocked, go straight to file picker
+  if (cameraBlocked) {
+    toast('Camera not available — opening file picker', 'info', 2000);
+    document.getElementById('selfie-file')?.click();
+    return;
+  }
+
+  const modal = document.getElementById('selfie-camera-modal');
+  const video = document.getElementById('selfie-video');
+  if (!modal || !video) return;
+
+  // Check permission state first if supported
+  try {
+    if (navigator.permissions) {
+      const status = await navigator.permissions.query({ name: 'camera' });
+      if (status.state === 'denied') {
+        cameraBlocked = true;
+        toast('Camera blocked. Enable it in browser settings or upload a photo.', 'warn', 4000);
+        document.getElementById('selfie-file')?.click();
+        return;
+      }
+    }
+  } catch {
+    // permissions API not available on this browser — continue
+  }
+
+  try {
+    selfieStream = await navigator.mediaDevices.getUserMedia({
+      video: { facingMode: 'user', width: { ideal: 720 }, height: { ideal: 720 } },
+      audio: false
+    });
+    video.srcObject = selfieStream;
+    modal.classList.add('open');
+  } catch (e) {
+    console.warn('Camera error:', e.name, e.message);
+
+    // Remember the failure so we don't prompt again
+    cameraBlocked = true;
+
+    if (e.name === 'NotAllowedError' || e.name === 'PermissionDeniedError') {
+      toast('Camera permission denied. Upload a photo instead.', 'warn', 4000);
+    } else if (e.name === 'NotFoundError' || e.name === 'DevicesNotFoundError') {
+      toast('No camera found. Upload a photo instead.', 'warn', 4000);
+    } else if (e.name === 'NotReadableError') {
+      toast('Camera is busy. Close other apps and try again, or upload a photo.', 'warn', 4000);
+    } else {
+      toast('Camera unavailable. Upload a photo instead.', 'warn', 3000);
+    }
+
+    // Fall back to file picker once
+    document.getElementById('selfie-file')?.click();
+  }
+}
+
+window.closeSelfieCamera = function () {
+  const modal = document.getElementById('selfie-camera-modal');
+  if (modal) modal.classList.remove('open');
+  if (selfieStream) {
+    selfieStream.getTracks().forEach(t => t.stop());
+    selfieStream = null;
+  }
+};
+
+window.captureSelfie = function () {
+  const video = document.getElementById('selfie-video');
+  if (!video || !selfieStream) return;
+
+  // Draw video frame to canvas
+  const canvas = document.createElement('canvas');
+  canvas.width = video.videoWidth;
+  canvas.height = video.videoHeight;
+  const ctx = canvas.getContext('2d');
+  ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+
+  // Convert to blob and upload
+  canvas.toBlob(blob => {
+    if (!blob) return toast('Failed to capture image', 'error');
+    const file = new File([blob], `selfie-${Date.now()}.jpg`, { type: 'image/jpeg' });
+    uploadSelfieFile(file);
+    closeSelfieCamera();
+  }, 'image/jpeg', 0.9);
+};
+
+function uploadSelfieFile(file) {
+  const allowed = ['.jpg', '.jpeg', '.png', '.webp'];
+  const ext = '.' + file.name.split('.').pop().toLowerCase();
+  if (!allowed.includes(ext)) return toast('Only JPG, PNG, or WEBP', 'error');
+  if (file.size > 5 * 1024 * 1024) return toast('Max 5MB', 'error');
+
+  const form = new FormData();
+  form.append('selfie', file);
+
+  const xhr = new XMLHttpRequest();
+  xhr.open('POST', '/api/upload/selfie');
+  xhr.setRequestHeader('Authorization', `Bearer ${localStorage.getItem('token')}`);
+
+  const zone = document.getElementById('selfie-zone');
+  if (zone) zone.style.opacity = '0.5';
+
+  xhr.onload = async () => {
+    if (zone) zone.style.opacity = '1';
+    if (xhr.status >= 200 && xhr.status < 300) {
+      toast('Selfie uploaded', 'success');
+      const u = await api('/api/auth/me').then(r => r.user);
+      renderSelfie(u.kycSelfie);
+      renderKyc(u);
+    } else {
+      let err = 'Upload failed';
+      try { err = JSON.parse(xhr.responseText).error || err; } catch {}
+      toast(err, 'error');
+    }
+  };
+
+  xhr.onerror = () => {
+    if (zone) zone.style.opacity = '1';
+    toast('Upload failed', 'error');
+  };
+
+  xhr.send(form);
+}
+
+// keep existing renderSelfie() and removeSelfie() unchanged
+
+function renderSelfie(selfie) {
+  const el = document.getElementById('selfie-preview');
+  if (!el) return;
+  if (!selfie?.url) { el.innerHTML = ''; return; }
+
+  el.innerHTML = `
+    <div style="display:flex; align-items:center; gap:14px; padding: 12px; border-radius: 12px; border: 1px solid var(--border);">
+      <img src="${selfie.url}" alt="Selfie" style="width: 80px; height: 80px; border-radius: 10px; object-fit: cover;" />
+      <div style="flex:1;">
+        <div style="font-weight: 600;">Selfie uploaded</div>
+        <div class="tag">${new Date(selfie.uploadedAt).toLocaleString()}</div>
+      </div>
+      <button class="danger sm" onclick="removeSelfie()">Remove</button>
+    </div>
+  `;
+}
+
+window.removeSelfie = async () => {
+  if (!confirm('Remove this selfie?')) return;
+  try {
+    await api('/api/upload/selfie', { method: 'DELETE' });
+    toast('Selfie removed', 'success');
+    renderSelfie(null);
+  } catch (e) { toast(e.message, 'error'); }
 };

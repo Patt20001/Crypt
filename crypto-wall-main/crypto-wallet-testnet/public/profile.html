@@ -5,28 +5,31 @@
 <meta name="viewport" content="width=device-width, initial-scale=1" />
 <title>Profile — NovaWallet</title>
 <script src="/js/theme.js"></script>
-<script src="https://cdn.jsdelivr.net/npm/qrcodejs@1.0.0/qrcode.min.js"></script>
 <link rel="stylesheet" href="/css/style.css" />
+<script src="https://cdn.jsdelivr.net/npm/qrcodejs@1.0.0/qrcode.min.js"></script>
 </head>
 <body>
-<div class="nav glass">
-  <div class="brand">
-    <div class="brand-logo">₮</div>
-    <span>Nova<span class="brand-accent">Wallet</span></span>
+  <div class="nav glass">
+    <div class="brand">
+      <div class="brand-logo">₮</div>
+      <span>Nova<span class="brand-accent">Wallet</span></span>
+    </div>
+    <div class="nav-links">
+      <a href="/dashboard.html" class="nav-link">Dashboard</a>
+      <a href="/portfolio.html" class="nav-link">Portfolio</a>
+      <a href="/orders.html" class="nav-link">Trade</a>
+      <a href="/copy.html" class="nav-link">Copy</a>
+      <a href="/staking.html" class="nav-link">Stake</a>
+      <a href="/swap.html" class="nav-link">Swap</a>
+      <a href="/wallet.html" class="nav-link">Wallet</a>
+      <a href="/profile.html" class="nav-link active">Profile</a>
+      <div class="theme-toggle" data-action="toggle-theme" title="Toggle theme">🌓</div>
+      <a href="#" data-action="logout" class="nav-link">Logout</a>
+    </div>
   </div>
-  <div class="nav-links">
-    <a href="/dashboard.html" class="nav-link">Dashboard</a>
-    <a href="/staking.html" class="nav-link">Stake</a>
-    <a href="/swap.html" class="nav-link">Swap</a>
-    <a href="/wallet.html" class="nav-link">Wallet</a>
-    <a href="/networks.html" class="nav-link">Networks</a>
-    <a href="/profile.html" class="nav-link">Profile</a>
-    <div class="theme-toggle" data-action="toggle-theme" title="Toggle theme">🌓</div>
-    <a href="#" data-action="logout" class="nav-link">Logout</a>
-  </div>
-</div>
 
   <div class="container">
+    <!-- Profile header -->
     <div class="card">
       <div class="profile-header">
         <div class="profile-avatar" id="avatar">?</div>
@@ -41,15 +44,29 @@
     </div>
 
     <div class="grid grid-2">
+      <!-- ACCOUNT + KYC PERSONAL INFO -->
       <div class="card">
         <h3>Account</h3>
         <label>Display name</label>
         <input id="displayName" placeholder="Your name" />
+
         <label>Country</label>
         <input id="country" placeholder="e.g. Nigeria" />
-        <button onclick="saveProfile()">Save changes</button>
+
+        <h3 style="margin-top: 20px;">KYC Personal Info</h3>
+        <label>First name</label>
+        <input id="firstName" placeholder="As on your ID" />
+
+        <label>Last name</label>
+        <input id="lastName" placeholder="As on your ID" />
+
+        <label>Date of birth</label>
+        <input id="dateOfBirth" type="date" />
+
+        <button onclick="saveProfile()" style="width:100%; margin-top: 8px;">Save changes</button>
       </div>
 
+      <!-- SECURITY -->
       <div class="card">
         <h3>Security</h3>
         <div class="row">
@@ -58,7 +75,8 @@
             <div class="row-sub">Require a code on every login</div>
           </div>
           <div class="switch" id="twofa"></div>
-        </div>    
+        </div>
+
         <div class="row">
           <div>
             <div class="row-label">Change password</div>
@@ -73,22 +91,33 @@
           <input id="new-pwd" type="password" />
           <button onclick="changePwd()">Save password</button>
         </div>
+
+        <div class="row" style="margin-top: 8px;">
+          <div>
+            <div class="row-label">Security questions</div>
+            <div class="row-sub" id="sq-status">Not set</div>
+          </div>
+          <button class="secondary sm" onclick="openSecurityQuestions()">Setup</button>
+        </div>
       </div>
     </div>
 
+    <!-- KYC VERIFICATION -->
     <div class="card">
       <h3>KYC Verification</h3>
       <p class="tag" style="margin-bottom: 14px;">
-        Upload a government-issued ID, passport, or driver's license (JPG, PNG, WEBP, or PDF — max 5MB).
+        Upload a government-issued ID and a selfie to verify your identity.
       </p>
 
       <div id="kyc-status-banner"></div>
+
+      <h4 style="margin-top: 16px; font-size: 13px; color: var(--text-mute); text-transform: uppercase; letter-spacing: .08em;">Identity Document</h4>
 
       <div id="upload-zone" class="upload-zone">
         <input type="file" id="kyc-file" accept=".jpg,.jpeg,.png,.webp,.pdf" hidden />
         <div class="upload-inner">
           <div style="font-size: 34px;">📄</div>
-          <div style="font-weight: 600; margin-top: 8px;">Click to upload document</div>
+          <div style="font-weight: 600; margin-top: 8px;">Click to upload ID document</div>
           <div class="tag" style="margin-top: 4px;">JPG · PNG · WEBP · PDF — 5MB max</div>
         </div>
       </div>
@@ -99,16 +128,26 @@
       </div>
 
       <div id="docs" style="margin-top: 20px;"></div>
+
+      <h4 style="margin-top: 24px; font-size: 13px; color: var(--text-mute); text-transform: uppercase; letter-spacing: .08em;">Selfie Verification</h4>
+      <p class="tag" style="margin-bottom: 12px;">
+        Take a clear selfie holding your ID next to your face. We'll match it to your document.
+      </p>
+
+      <div id="selfie-zone" class="upload-zone">
+        <input type="file" id="selfie-file" accept="image/*" capture="user" hidden />
+        <div class="upload-inner" id="selfie-inner">
+          <div style="font-size: 34px;">🤳</div>
+          <div style="font-weight: 600; margin-top: 8px;">Click to capture or upload selfie</div>
+          <div class="tag" style="margin-top: 4px;">JPG · PNG · WEBP — 5MB max</div>
+        </div>
+      </div>
+
+      <div id="selfie-preview" style="margin-top: 16px;"></div>
     </div>
   </div>
 
-  <script src="/js/ui.js"></script>
-  <script src="/js/auth.js"></script>
-  <script src="/js/prices.js"></script>
-  <script src="/js/notifications.js"></script>
-  <script src="/js/profile.js"></script>
-
-    <!-- 2FA SETUP MODAL (QR + verify) -->
+  <!-- ================= 2FA MODAL ================= -->
   <div class="modal" id="twofa-modal">
     <div class="modal-inner glass" style="max-width: 520px; max-height: 90vh; overflow-y: auto;">
       <div class="modal-head">
@@ -123,7 +162,7 @@
     </div>
   </div>
 
-  <!-- 2FA DISABLE MODAL (password + code) -->
+  <!-- ================= 2FA DISABLE MODAL ================= -->
   <div class="modal" id="disable-modal">
     <div class="modal-inner glass" style="max-width: 460px;">
       <div class="modal-head">
@@ -157,5 +196,46 @@
       </button>
     </div>
   </div>
+
+  <!-- ================= SECURITY QUESTIONS MODAL ================= -->
+  <div class="modal" id="sq-modal">
+    <div class="modal-inner glass" style="max-width: 520px; max-height: 90vh; overflow-y: auto;">
+      <div class="modal-head">
+        <h3>Setup Security Questions</h3>
+        <button class="modal-close" onclick="closeModal('sq-modal')">×</button>
+      </div>
+      <div id="sq-modal-body"></div>
+    </div>
+  </div>
+
+    <!-- ================= SELFIE CAMERA MODAL ================= -->
+  <div class="modal" id="selfie-camera-modal">
+    <div class="modal-inner glass" style="max-width: 520px;">
+      <div class="modal-head">
+        <h3>Take Selfie</h3>
+        <button class="modal-close" onclick="closeSelfieCamera()">×</button>
+      </div>
+      <div style="position: relative; width: 100%; aspect-ratio: 1; background: #000; border-radius: 12px; overflow: hidden; margin-bottom: 14px;">
+        <video id="selfie-video" autoplay muted playsinline style="width: 100%; height: 100%; object-fit: cover;"></video>
+      </div>
+      <p class="tag" style="text-align: center; margin-bottom: 14px;">
+        Position your face in the frame, then tap Capture.
+      </p>
+      <div style="display: flex; gap: 10px;">
+        <button class="secondary" style="flex: 1;" onclick="closeSelfieCamera()">Cancel</button>
+        <button style="flex: 1;" onclick="captureSelfie()">Capture</button>
+        <button class="secondary" style="flex: 1;" onclick="closeSelfieCamera(); document.getElementById('selfie-file').click();">
+            Upload instead
+            </button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ================= SCRIPTS ================= -->
+  <script src="/js/ui.js"></script>
+  <script src="/js/auth.js"></script>
+  <script src="/js/prices.js"></script>
+  <script src="/js/notifications.js"></script>
+  <script src="/js/profile.js"></script>
 </body>
 </html>

@@ -2,28 +2,37 @@ const multer = require('multer');
 const path = require('path');
 const fs = require('fs');
 
-const dir = path.join(__dirname, '..', 'public', 'uploads', 'kyc');
-if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
+const baseDir = path.join(__dirname, '..', 'public', 'uploads');
+const kycDir = path.join(baseDir, 'kyc');
+const selfieDir = path.join(baseDir, 'selfies');
 
-const storage = multer.diskStorage({
-  destination: (req, file, cb) => cb(null, dir),
-  filename: (req, file, cb) => {
-    const ext = path.extname(file.originalname).toLowerCase();
-    const name = `${req.user._id}-${Date.now()}${ext}`;
-    cb(null, name);
-  }
-});
+if (!fs.existsSync(kycDir)) fs.mkdirSync(kycDir, { recursive: true });
+if (!fs.existsSync(selfieDir)) fs.mkdirSync(selfieDir, { recursive: true });
 
-const ALLOWED = ['.jpg', '.jpeg', '.png', '.pdf', '.webp'];
+const ALLOWED = ['.jpg', '.jpeg', '.png', '.webp', '.pdf'];
+const ALLOWED_IMAGE_ONLY = ['.jpg', '.jpeg', '.png', '.webp'];
 
-const upload = multer({
-  storage,
-  limits: { fileSize: 5 * 1024 * 1024 }, // 5MB
-  fileFilter: (req, file, cb) => {
-    const ext = path.extname(file.originalname).toLowerCase();
-    if (!ALLOWED.includes(ext)) return cb(new Error('Only JPG, PNG, WEBP, or PDF allowed'));
-    cb(null, true);
-  }
-});
+function makeUpload(dir, allowedExts) {
+  return multer({
+    storage: multer.diskStorage({
+      destination: (req, file, cb) => cb(null, dir),
+      filename: (req, file, cb) => {
+        const ext = path.extname(file.originalname).toLowerCase();
+        cb(null, `${req.user._id}-${Date.now()}${ext}`);
+      }
+    }),
+    limits: { fileSize: 5 * 1024 * 1024 },
+    fileFilter: (req, file, cb) => {
+      const ext = path.extname(file.originalname).toLowerCase();
+      if (!allowedExts.includes(ext)) return cb(new Error('Invalid file type'));
+      cb(null, true);
+    }
+  });
+}
 
-module.exports = upload;
+module.exports = {
+  kycUpload: makeUpload(kycDir, ALLOWED),
+  selfieUpload: makeUpload(selfieDir, ALLOWED_IMAGE_ONLY),
+  kycDir,
+  selfieDir
+};
