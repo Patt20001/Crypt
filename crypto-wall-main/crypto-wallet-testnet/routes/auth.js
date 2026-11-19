@@ -29,50 +29,170 @@ function genRecoveryCodes(count = 8) {
   return codes;
 }
 
+
 /* ============================================================
    REGISTER
    ============================================================ */
-async function register() {
-  const username = document.getElementById('username')?.value.trim();
-  const email = document.getElementById('email')?.value.trim();
-  const password = document.getElementById('password')?.value;
-  const referralCode = document.getElementById('referral')?.value.trim();
-  const acceptTerms = document.getElementById('terms')?.checked;
-
-  if (!username || !email || !password) {
-    return showMsg('Please fill in all required fields');
-  }
-  if (!acceptTerms) {
-    return showMsg('You must accept the Terms & Risk Disclosure');
-  }
-
-  const btn = document.querySelector('button[onclick="register()"]');
-  const originalText = btn?.textContent;
-  if (btn) { btn.disabled = true; btn.textContent = 'Creating account…'; }
-
+router.post('/register', async (req, res) => {
   try {
-    const r = await fetch(`${API}/api/auth/register`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ username, email, password, referralCode, acceptTerms })
-    });
-    const d = await r.json();
+    const {
+      username,
+      email,
+      password,
+      referralCode,
+      acceptTerms
+    } = req.body || {};
 
-    if (!r.ok) {
-      if (btn) { btn.disabled = false; btn.textContent = originalText; }
-      return showMsg(d.error || 'Registration failed');
+    // Validate required fields
+    if (
+      typeof username !== 'string' ||
+      typeof email !== 'string' ||
+      typeof password !== 'string'
+    ) {
+      return res.status(400).json({
+        error: 'All fields required'
+      });
     }
 
-    localStorage.setItem('token', d.token);
-    localStorage.setItem('user', JSON.stringify(d.user));
+    const cleanUsername = username.trim();
+    const cleanEmail = email.trim().toLowerCase();
+    const cleanReferralCode = typeof referralCode === 'string'
+      ? referralCode.trim().toUpperCase()
+      : '';
 
-    // Show onboarding modal
-    showOnboardingModal();
+    if (!cleanUsername || !cleanEmail || !password) {
+      return res.status(400).json({
+        error: 'All fields required'
+      });
+    }
+
+    if (cleanUsername.length < 3) {
+      return res.status(400).json({
+        error: 'Username must be at least 3 characters'
+      });
+    }
+
+    if (password.length < 6) {
+      return res.status(400).json({
+        error: 'Password min 6 characters'
+      });
+    }
+
+    if (password.length > 128) {
+      return res.status(400).json({
+        error: 'Password is too long'
+      });
+    }
+
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(cleanEmail)) {
+      return res.status(400).json({
+        error: 'Please enter a valid email address'
+      });
+    }
+
+    if (!acceptTerms) {
+      return res.status(400).json({
+        error: 'You must accept the Terms & Risk Disclosure'
+      });
+    }
+
+    // Check for existing account
+    const exists = await User.findOne({
+      $or: [
+        { email: cleanEmail },
+        { username: cleanUsername }
+      ]
+    });
+
+    if (exists) {
+      return res.status(409).json({
+        error: 'Username or email already exists'
+      });
+    }
+
+    // Hash password
+    const hashed = await bcrypt.hash(password, 12);
+
+    // Find referral owner
+    let referrer = null;
+
+    if (cleanReferralCode) {
+      referrer = await User.findOne({
+        referralCode: cleanReferralCode
+      });
+    }
+
+    // Create user
+    const user = await User.create({
+      username: cleanUsername,
+      email: cleanEmail,
+      password: hashed,
+
+      // Never accept role from the frontend
+      role: 'user',
+
+      referralCode:
+        'NVW' + crypto.randomBytes(4).toString('hex').toUpperCase(),
+
+      acceptedTermsAt: new Date(),
+
+      referredBy: referrer?._id || null
+    });
+
+    // Record referral
+    if (referrer) {
+      await Referral.create({
+        referrer: referrer._id,
+        referee: user._id,
+        bonusPaid: false
+      });
+
+      await notify(
+        referrer._id,
+        'referral',
+        'New referral!',
+        `${cleanUsername} signed up using your code. You'll earn 5 USDT when they make their first deposit.`
+      );
+    }
+
+    // Welcome notification
+    await notify(
+      user._id,
+      'system',
+      'Welcome to NovaWallet',
+      'Complete KYC to unlock higher withdrawal limits.'
+    );
+
+    // Generate authentication token
+    const token = sign(user);
+
+    // Return account information
+    return res.status(201).json({
+      token,
+      user: {
+        id: user._id,
+        username: user.username,
+        email: user.email,
+        role: user.role
+      }
+    });
+
   } catch (e) {
-    if (btn) { btn.disabled = false; btn.textContent = originalText; }
-    showMsg(e.message || 'Registration failed');
+    console.error('Registration error:', e);
+
+    // Handle MongoDB duplicate-key errors
+    if (e.code === 11000) {
+      return res.status(409).json({
+        error: 'Username or email already exists'
+      });
+    }
+
+    return res.status(500).json({
+      error: 'Registration failed. Please try again.'
+    });
   }
-}
+});
+
 
 /* ============================================================
    LOGIN
