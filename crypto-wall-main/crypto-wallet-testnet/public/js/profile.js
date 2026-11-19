@@ -39,9 +39,7 @@ async function init() {
   loadSecurityQuestionStatus();
   renderSelfie(u.kycSelfie);
   setupSelfieUploader();
-
-  // Onboarding hint (if ?onboarding=1 in URL)
- 
+}
 
 function renderKyc(u) {
   const pill = document.getElementById('kyc');

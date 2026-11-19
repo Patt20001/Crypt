@@ -16,13 +16,22 @@ function showMsg(text, ok = false) {
 
 /* ---------------- REGISTER ---------------- */
 async function register() {
-  const username = document.getElementById('username').value.trim();
-  const email = document.getElementById('email').value.trim();
-  const password = document.getElementById('password').value;
+  const username = document.getElementById('username')?.value.trim();
+  const email = document.getElementById('email')?.value.trim();
+  const password = document.getElementById('password')?.value;
   const referralCode = document.getElementById('referral')?.value.trim();
   const acceptTerms = document.getElementById('terms')?.checked;
 
-  if (!acceptTerms) return showMsg('You must accept the Terms & Risk Disclosure');
+  if (!username || !email || !password) {
+    return showMsg('Please fill in all required fields');
+  }
+  if (!acceptTerms) {
+    return showMsg('You must accept the Terms & Risk Disclosure');
+  }
+
+  const btn = document.getElementById('signup-btn') || document.querySelector('button[onclick="register()"]');
+  const originalText = btn?.textContent;
+  if (btn) { btn.disabled = true; btn.textContent = 'Creating account…'; }
 
   try {
     const r = await fetch(`${API}/api/auth/register`, {
@@ -31,15 +40,22 @@ async function register() {
       body: JSON.stringify({ username, email, password, referralCode, acceptTerms })
     });
     const d = await r.json();
-  if (!r.ok) return showMsg(d.error || 'Registration failed');
 
-  localStorage.setItem('token', d.token);
-  localStorage.setItem('user', JSON.stringify(d.user));
+    if (!r.ok) {
+      if (btn) { btn.disabled = false; btn.textContent = originalText; }
+      return showMsg(d.error || 'Registration failed');
+    }
+
+    localStorage.setItem('token', d.token);
+    localStorage.setItem('user', JSON.stringify(d.user));
     if (typeof toast === 'function') toast('Account created!', 'success');
     setTimeout(() => {
       window.location.replace(d.user.role === 'admin' ? '/admin.html' : '/dashboard.html');
     }, 500);
-  } catch (e) { showMsg(e.message); }
+  } catch (e) {
+    if (btn) { btn.disabled = false; btn.textContent = originalText; }
+    showMsg(e.message || 'Registration failed');
+  }
 }
 
 /* ---------------- LOGIN ---------------- */
