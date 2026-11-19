@@ -1,3 +1,4 @@
+
 const express = require('express');
 const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
@@ -29,118 +30,42 @@ function genRecoveryCodes(count = 8) {
   return codes;
 }
 
-
 /* ============================================================
    REGISTER
    ============================================================ */
 router.post('/register', async (req, res) => {
   try {
-    const {
+    const { username, email, password, referralCode, acceptTerms } = req.body;
+
+    if (!username || !email || !password)
+      return res.status(400).json({ error: 'All fields required' });
+
+    if (password.length < 6)
+      return res.status(400).json({ error: 'Password min 6 characters' });
+
+    if (!acceptTerms)
+      return res.status(400).json({ error: 'You must accept the Terms & Risk Disclosure' });
+
+    const exists = await User.findOne({ $or: [{ email }, { username }] });
+    if (exists) return res.status(409).json({ error: 'User already exists' });
+
+    const hashed = await bcrypt.hash(password, 10);
+
+    let referrer = null;
+    if (referralCode) {
+      referrer = await User.findOne({ referralCode: referralCode.toUpperCase() });
+    }
+
+    const user = await User.create({
       username,
       email,
-      password,
-      referralCode,
-      acceptTerms
-    } = req.body || {};
-
-    // Validate required fields
-    if (
-      typeof username !== 'string' ||
-      typeof email !== 'string' ||
-      typeof password !== 'string'
-    ) {
-      return res.status(400).json({
-        error: 'All fields required'
-      });
-    }
-
-    const cleanUsername = username.trim();
-    const cleanEmail = email.trim().toLowerCase();
-    const cleanReferralCode = typeof referralCode === 'string'
-      ? referralCode.trim().toUpperCase()
-      : '';
-
-    if (!cleanUsername || !cleanEmail || !password) {
-      return res.status(400).json({
-        error: 'All fields required'
-      });
-    }
-
-    if (cleanUsername.length < 3) {
-      return res.status(400).json({
-        error: 'Username must be at least 3 characters'
-      });
-    }
-
-    if (password.length < 6) {
-      return res.status(400).json({
-        error: 'Password min 6 characters'
-      });
-    }
-
-    if (password.length > 128) {
-      return res.status(400).json({
-        error: 'Password is too long'
-      });
-    }
-
-    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(cleanEmail)) {
-      return res.status(400).json({
-        error: 'Please enter a valid email address'
-      });
-    }
-
-    if (!acceptTerms) {
-      return res.status(400).json({
-        error: 'You must accept the Terms & Risk Disclosure'
-      });
-    }
-
-    // Check for existing account
-    const exists = await User.findOne({
-      $or: [
-        { email: cleanEmail },
-        { username: cleanUsername }
-      ]
-    });
-
-    if (exists) {
-      return res.status(409).json({
-        error: 'Username or email already exists'
-      });
-    }
-
-    // Hash password
-    const hashed = await bcrypt.hash(password, 12);
-
-    // Find referral owner
-    let referrer = null;
-
-    if (cleanReferralCode) {
-      referrer = await User.findOne({
-        referralCode: cleanReferralCode
-      });
-    }
-
-    // Create user
-    const user = await User.create({
-      username: cleanUsername,
-      email: cleanEmail,
       password: hashed,
-
-      // Never accept role from the frontend
-      role: 'user',
-
-      referralCode:
-        'NVW' + crypto.randomBytes(4).toString('hex').toUpperCase(),
-
+      referralCode: 'NVW' + Math.random().toString(36).slice(2, 8).toUpperCase(),
       acceptedTermsAt: new Date(),
-
       referredBy: referrer?._id || null
     });
 
-    // Record referral
-    if (referrer) {
+    if (referrer && referrer._id.toString() !== user._id.toString()) {
       await Referral.create({
         referrer: referrer._id,
         referee: user._id,
@@ -151,11 +76,10 @@ router.post('/register', async (req, res) => {
         referrer._id,
         'referral',
         'New referral!',
-        `${cleanUsername} signed up using your code. You'll earn 5 USDT when they make their first deposit.`
+        `${username} signed up using your code. You'll earn 5 USDT when they make their first deposit.`
       );
     }
 
-    // Welcome notification
     await notify(
       user._id,
       'system',
@@ -163,36 +87,15 @@ router.post('/register', async (req, res) => {
       'Complete KYC to unlock higher withdrawal limits.'
     );
 
-    // Generate authentication token
-    const token = sign(user);
-
-    // Return account information
-    return res.status(201).json({
-      token,
-      user: {
-        id: user._id,
-        username: user.username,
-        email: user.email,
-        role: user.role
-      }
+    res.json({
+      token: sign(user),
+      user: { id: user._id, username, email, role: user.role }
     });
 
   } catch (e) {
-    console.error('Registration error:', e);
-
-    // Handle MongoDB duplicate-key errors
-    if (e.code === 11000) {
-      return res.status(409).json({
-        error: 'Username or email already exists'
-      });
-    }
-
-    return res.status(500).json({
-      error: 'Registration failed. Please try again.'
-    });
+    res.status(500).json({ error: e.message });
   }
 });
-
 
 /* ============================================================
    LOGIN
@@ -201,13 +104,15 @@ router.post('/login', async (req, res) => {
   try {
     const { email, password, code } = req.body;
     const user = await User.findOne({ email });
+
     if (!user) return res.status(401).json({ error: 'Invalid credentials' });
 
     const ok = await bcrypt.compare(password, user.password);
     if (!ok) return res.status(401).json({ error: 'Invalid credentials' });
+
     if (user.isBanned) return res.status(403).json({ error: 'Account banned' });
 
-    // ---------- 2FA gate ----------
+    // 2FA verification
     if (user.twoFA) {
       if (!code) {
         return res.status(401).json({
@@ -231,7 +136,9 @@ router.post('/login', async (req, res) => {
         user.twoFARecoveryCodes = user.twoFARecoveryCodes.filter(
           c => c !== cleanCode.toUpperCase()
         );
+
         await user.save();
+
         await notify(
           user._id,
           'security',
@@ -241,14 +148,17 @@ router.post('/login', async (req, res) => {
       }
     }
 
-    // ---------- login succeeded ----------
+    // Login succeeded
     const ip = req.ip || req.headers['x-forwarded-for'] || 'unknown';
     const ua = req.headers['user-agent'] || 'unknown';
+
     user.lastLogin = { ip, userAgent: ua, at: new Date() };
+
     user.loginHistory = [
       { ip, userAgent: ua, at: new Date() },
       ...(user.loginHistory || [])
     ].slice(0, 5);
+
     await user.save();
 
     res.json({
@@ -260,6 +170,7 @@ router.post('/login', async (req, res) => {
         role: user.role
       }
     });
+
   } catch (e) {
     res.status(500).json({ error: e.message });
   }
@@ -273,16 +184,18 @@ router.get('/me', auth, async (req, res) => {
 });
 
 /* ============================================================
-   2FA SETUP — STEP 1: Generate secret + QR URI
+   2FA SETUP — STEP 1
    ============================================================ */
 router.post('/2fa/setup', auth, async (req, res) => {
   try {
     const user = await User.findById(req.user._id);
+
     if (user.twoFA) {
       return res.status(400).json({ error: '2FA is already enabled' });
     }
 
     const secret = generateSecret(20);
+
     const otpauth = buildOtpAuthURI({
       issuer: APP_NAME,
       account: user.email,
@@ -298,34 +211,43 @@ router.post('/2fa/setup', auth, async (req, res) => {
       issuer: APP_NAME,
       account: user.email
     });
+
   } catch (e) {
     res.status(500).json({ error: e.message });
   }
 });
 
 /* ============================================================
-   2FA SETUP — STEP 2: Verify code and enable
+   2FA SETUP — STEP 2
    ============================================================ */
 router.post('/2fa/enable', auth, async (req, res) => {
   try {
     const { code } = req.body;
+
     if (!code) return res.status(400).json({ error: 'Code required' });
 
     const user = await User.findById(req.user._id);
+
     if (user.twoFA) return res.status(400).json({ error: 'Already enabled' });
+
     if (!user.twoFAPendingSecret)
       return res.status(400).json({ error: 'No setup in progress. Start over.' });
 
     const cleanCode = String(code).replace(/\s/g, '');
+
     const valid = verifyTOTP(cleanCode, user.twoFAPendingSecret);
+
     if (!valid) {
-      return res.status(400).json({ error: 'Invalid code — check your authenticator app' });
+      return res.status(400).json({
+        error: 'Invalid code — check your authenticator app'
+      });
     }
 
     user.twoFA = true;
     user.twoFASecret = user.twoFAPendingSecret;
     user.twoFAPendingSecret = '';
     user.twoFARecoveryCodes = genRecoveryCodes(8);
+
     await user.save();
 
     await notify(
@@ -339,25 +261,32 @@ router.post('/2fa/enable', auth, async (req, res) => {
       ok: true,
       recoveryCodes: user.twoFARecoveryCodes
     });
+
   } catch (e) {
     res.status(500).json({ error: e.message });
   }
 });
 
 /* ============================================================
-   2FA — VERIFY CODE (used for withdrawals & sensitive actions)
+   2FA VERIFY
    ============================================================ */
 router.post('/2fa/verify', auth, async (req, res) => {
   try {
     const { code } = req.body;
+
     if (!code) return res.status(400).json({ error: 'Code required' });
 
     const user = await User.findById(req.user._id);
-    if (!user.twoFA) return res.status(400).json({ error: '2FA is not enabled' });
+
+    if (!user.twoFA)
+      return res.status(400).json({ error: '2FA is not enabled' });
 
     const cleanCode = String(code).replace(/\s/g, '');
+
     const isTotp = verifyTOTP(cleanCode, user.twoFASecret);
-    const isRecovery = (user.twoFARecoveryCodes || []).includes(cleanCode.toUpperCase());
+
+    const isRecovery = (user.twoFARecoveryCodes || [])
+      .includes(cleanCode.toUpperCase());
 
     if (!isTotp && !isRecovery)
       return res.status(400).json({ error: 'Invalid or expired code' });
@@ -370,34 +299,44 @@ router.post('/2fa/verify', auth, async (req, res) => {
     }
 
     res.json({ ok: true });
+
   } catch (e) {
     res.status(500).json({ error: e.message });
   }
 });
 
 /* ============================================================
-   2FA — DISABLE (requires password + current code)
+   2FA DISABLE
    ============================================================ */
 router.post('/2fa/disable', auth, async (req, res) => {
   try {
     const { password, code } = req.body;
+
     if (!password || !code)
       return res.status(400).json({ error: 'Password and 2FA code required' });
 
     const user = await User.findById(req.user._id);
-    if (!user.twoFA) return res.status(400).json({ error: '2FA is not enabled' });
+
+    if (!user.twoFA)
+      return res.status(400).json({ error: '2FA is not enabled' });
 
     const pwdOk = await bcrypt.compare(password, user.password);
-    if (!pwdOk) return res.status(401).json({ error: 'Incorrect password' });
+
+    if (!pwdOk)
+      return res.status(401).json({ error: 'Incorrect password' });
 
     const cleanCode = String(code).replace(/\s/g, '');
+
     const valid = verifyTOTP(cleanCode, user.twoFASecret);
-    if (!valid) return res.status(400).json({ error: 'Invalid 2FA code' });
+
+    if (!valid)
+      return res.status(400).json({ error: 'Invalid 2FA code' });
 
     user.twoFA = false;
     user.twoFASecret = '';
     user.twoFAPendingSecret = '';
     user.twoFARecoveryCodes = [];
+
     await user.save();
 
     await notify(
@@ -408,45 +347,60 @@ router.post('/2fa/disable', auth, async (req, res) => {
     );
 
     res.json({ ok: true });
+
   } catch (e) {
     res.status(500).json({ error: e.message });
   }
 });
 
 /* ============================================================
-   2FA — REGENERATE RECOVERY CODES (requires current code)
+   REGENERATE RECOVERY CODES
    ============================================================ */
 router.post('/2fa/recovery-codes', auth, async (req, res) => {
   try {
     const { code } = req.body;
+
     if (!code) return res.status(400).json({ error: 'Code required' });
 
     const user = await User.findById(req.user._id);
-    if (!user.twoFA) return res.status(400).json({ error: '2FA is not enabled' });
 
-    const valid = verifyTOTP(String(code).replace(/\s/g, ''), user.twoFASecret);
-    if (!valid) return res.status(400).json({ error: 'Invalid 2FA code' });
+    if (!user.twoFA)
+      return res.status(400).json({ error: '2FA is not enabled' });
+
+    const valid = verifyTOTP(
+      String(code).replace(/\s/g, ''),
+      user.twoFASecret
+    );
+
+    if (!valid)
+      return res.status(400).json({ error: 'Invalid 2FA code' });
 
     user.twoFARecoveryCodes = genRecoveryCodes(8);
+
     await user.save();
 
     res.json({ recoveryCodes: user.twoFARecoveryCodes });
+
   } catch (e) {
     res.status(500).json({ error: e.message });
   }
 });
 
 /* ============================================================
-   FORGOT PASSWORD — step 1: identify user by email
+   FORGOT PASSWORD — STEP 1
    ============================================================ */
 router.post('/forgot-password/start', async (req, res) => {
   try {
     const { email } = req.body;
-    if (!email) return res.status(400).json({ error: 'Email required' });
 
-    const user = await User.findOne({ email: email.toLowerCase() });
+    if (!email)
+      return res.status(400).json({ error: 'Email required' });
+
+    const user = await User.findOne({
+      email: email.toLowerCase()
+    });
+
     if (!user) {
-      // Don't reveal whether the email exists
       return res.json({ found: false, questions: [] });
     }
 
@@ -458,76 +412,118 @@ router.post('/forgot-password/start', async (req, res) => {
       });
     }
 
-    // Return the questions (without answers) so user can answer them
     res.json({
       found: true,
       hasQuestions: true,
       questions: user.securityQuestions.map(q => q.question)
     });
-  } catch (e) { res.status(500).json({ error: e.message }); }
+
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
 });
 
 /* ============================================================
-   FORGOT PASSWORD — step 2: verify answers
+   FORGOT PASSWORD — STEP 2
    ============================================================ */
 router.post('/forgot-password/verify', async (req, res) => {
   try {
     const { email, answers } = req.body;
-    if (!email || !Array.isArray(answers) || answers.length !== 3)
-      return res.status(400).json({ error: 'Email and 3 answers required' });
 
-    const user = await User.findOne({ email: email.toLowerCase() });
-    if (!user) return res.status(401).json({ error: 'Invalid recovery attempt' });
+    if (!email || !Array.isArray(answers) || answers.length !== 3) {
+      return res.status(400).json({
+        error: 'Email and 3 answers required'
+      });
+    }
 
-    // Verify all answers
+    const user = await User.findOne({
+      email: email.toLowerCase()
+    });
+
+    if (!user)
+      return res.status(401).json({ error: 'Invalid recovery attempt' });
+
     let allMatch = true;
+
     for (let i = 0; i < 3; i++) {
       const stored = user.securityQuestions[i]?.answerHash;
-      if (!stored) { allMatch = false; break; }
-      const ok = await bcrypt.compare(String(answers[i]).trim().toLowerCase(), stored);
-      if (!ok) { allMatch = false; break; }
+
+      if (!stored) {
+        allMatch = false;
+        break;
+      }
+
+      const ok = await bcrypt.compare(
+        String(answers[i]).trim().toLowerCase(),
+        stored
+      );
+
+      if (!ok) {
+        allMatch = false;
+        break;
+      }
     }
 
     if (!allMatch) {
-      return res.status(401).json({ error: 'One or more answers are incorrect' });
+      return res.status(401).json({
+        error: 'One or more answers are incorrect'
+      });
     }
 
-    // Generate reset token
     const token = crypto.randomBytes(32).toString('hex');
+
     user.resetToken = token;
-    user.resetTokenExpires = new Date(Date.now() + 30 * 60 * 1000); // 30 min
+    user.resetTokenExpires = new Date(Date.now() + 30 * 60 * 1000);
+
     await user.save();
 
     res.json({ ok: true, token });
-  } catch (e) { res.status(500).json({ error: e.message }); }
+
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
 });
 
 /* ============================================================
-   FORGOT PASSWORD — step 3: reset with token
+   FORGOT PASSWORD — STEP 3
    ============================================================ */
 router.post('/forgot-password/reset', async (req, res) => {
   try {
     const { token, newPassword } = req.body;
-    if (!token || !newPassword) return res.status(400).json({ error: 'Token and password required' });
-    if (newPassword.length < 6) return res.status(400).json({ error: 'Password min 6 chars' });
+
+    if (!token || !newPassword)
+      return res.status(400).json({ error: 'Token and password required' });
+
+    if (newPassword.length < 6)
+      return res.status(400).json({ error: 'Password min 6 chars' });
 
     const user = await User.findOne({
       resetToken: token,
       resetTokenExpires: { $gt: new Date() }
     });
-    if (!user) return res.status(400).json({ error: 'Invalid or expired token' });
+
+    if (!user)
+      return res.status(400).json({ error: 'Invalid or expired token' });
 
     user.password = await bcrypt.hash(newPassword, 10);
     user.resetToken = '';
     user.resetTokenExpires = null;
-    user.tokenVersion = (user.tokenVersion || 0) + 1; // invalidate existing sessions
+    user.tokenVersion = (user.tokenVersion || 0) + 1;
+
     await user.save();
 
-    await notify(user._id, 'security', 'Password reset',
-      'Your password was successfully reset.');
+    await notify(
+      user._id,
+      'security',
+      'Password reset',
+      'Your password was successfully reset.'
+    );
 
     res.json({ ok: true });
-  } catch (e) { res.status(500).json({ error: e.message }); }
+
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
 });
 
 module.exports = router;
