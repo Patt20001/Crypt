@@ -8,6 +8,8 @@ const orderSchema = new mongoose.Schema({
   price:    { type: Number, required: true },
   amount:   { type: Number, required: true },
   filled:   { type: Number, default: 0 },
+  avgFillPrice: { type: Number, default: 0 },
+  closeReason: { type: String, default: '' },
   status:   { type: String, enum: ['open', 'partial', 'filled', 'cancelled'], default: 'open' },
 
   // 👇 SL/TP as attachments (optional)

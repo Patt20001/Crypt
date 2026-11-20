@@ -68,17 +68,47 @@ const userSchema = new mongoose.Schema({
   resetTokenExpires: { type: Date,   default: null },
 
   // ============================================================
-  // Balances (production-grade networks only)
+  // Available and locked balances (wallet assets + internal spot markets)
   // ============================================================
   balances: {
     USDT: { type: Number, default: 0 },
-    ETH:  { type: Number, default: 0 },
-    BNB:  { type: Number, default: 0 }
+    BTC: { type: Number, default: 0 },
+    ETH: { type: Number, default: 0 },
+    SOL: { type: Number, default: 0 },
+    BNB: { type: Number, default: 0 },
+    XRP: { type: Number, default: 0 },
+    ADA: { type: Number, default: 0 },
+    DOGE: { type: Number, default: 0 },
+    LTC: { type: Number, default: 0 },
+    TRX: { type: Number, default: 0 },
+    DOT: { type: Number, default: 0 },
+    AVAX: { type: Number, default: 0 },
+    LINK: { type: Number, default: 0 },
+    BCH: { type: Number, default: 0 },
+    TON: { type: Number, default: 0 },
+    NEAR: { type: Number, default: 0 },
+    ATOM: { type: Number, default: 0 },
+    UNI: { type: Number, default: 0 }
   },
   locked: {
     USDT: { type: Number, default: 0 },
-    ETH:  { type: Number, default: 0 },
-    BNB:  { type: Number, default: 0 }
+    BTC: { type: Number, default: 0 },
+    ETH: { type: Number, default: 0 },
+    SOL: { type: Number, default: 0 },
+    BNB: { type: Number, default: 0 },
+    XRP: { type: Number, default: 0 },
+    ADA: { type: Number, default: 0 },
+    DOGE: { type: Number, default: 0 },
+    LTC: { type: Number, default: 0 },
+    TRX: { type: Number, default: 0 },
+    DOT: { type: Number, default: 0 },
+    AVAX: { type: Number, default: 0 },
+    LINK: { type: Number, default: 0 },
+    BCH: { type: Number, default: 0 },
+    TON: { type: Number, default: 0 },
+    NEAR: { type: Number, default: 0 },
+    ATOM: { type: Number, default: 0 },
+    UNI: { type: Number, default: 0 }
   },
 
   // ============================================================

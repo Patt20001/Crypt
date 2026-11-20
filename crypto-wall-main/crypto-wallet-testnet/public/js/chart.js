@@ -12,10 +12,14 @@ let currentSymbol = 'btcusdt';
 let currentBybitSymbol = 'BTCUSDT';
 let currentPairForLabel = 'BTC/USDT';
 let lastPriceUpdate = 0;
+let currentInterval = '1m';
+const BYBIT_INTERVALS = { '1m':'1', '5m':'5', '15m':'15', '1h':'60', '4h':'240', '1d':'D' };
+
 
 // Increments on every pair switch. Any WS/interval that doesn't
 // match this value is stale and must not touch the chart.
 let chartStreamGen = 0;
+let simulatedStreamHandle = null;
 
 /* ---------------- HELPERS ---------------- */
 function toBinanceSymbol(pair) {
@@ -81,67 +85,50 @@ function initCandleChart() {
 
 /* ---------------- HISTORICAL CANDLES ---------------- */
 async function loadHistoricalCandles(pair) {
-  const symbol = pair.replace('/', '').toUpperCase();
-  const myGen = chartStreamGen;   // capture generation at call time
+  const myGen = chartStreamGen;
+  const container = document.getElementById('candle-chart');
+  const status = document.getElementById('chart-status');
+  if (status) status.textContent = 'Loading candles…';
 
-  const attempts = [
-    {
-      name: 'binance',
-      url: `https://api.binance.com/api/v3/klines?symbol=${symbol}&interval=1m&limit=100`,
-      parse: (data) => data.map(k => ({
-        time: Math.floor(k[0] / 1000),
-        open: parseFloat(k[1]),
-        high: parseFloat(k[2]),
-        low: parseFloat(k[3]),
-        close: parseFloat(k[4])
-      }))
-    },
-    {
-      name: 'bybit',
-      url: `https://api.bybit.com/v5/market/kline?category=spot&symbol=${symbol}&interval=1&limit=100`,
-      parse: (json) => {
-        if (json.retCode !== 0) throw new Error(json.retMsg);
-        return json.result.list.slice().reverse().map(k => ({
-          time: Math.floor(parseInt(k[0]) / 1000),
-          open: parseFloat(k[1]),
-          high: parseFloat(k[2]),
-          low: parseFloat(k[3]),
-          close: parseFloat(k[4])
-        }));
-      }
+  try {
+    // Same-origin authenticated endpoint avoids browser CORS failures and
+    // supplies simulated development candles when external feeds are down.
+    const data = await api(`/api/orders/candles/${encodeURIComponent(pair.replace('/', '-'))}?interval=${encodeURIComponent(currentInterval)}`);
+    if (myGen !== chartStreamGen) return;
+    const candles = Array.isArray(data.candles) ? data.candles : [];
+    if (!candles.length) throw new Error('The candle endpoint returned no data');
+    if (candleSeries) {
+      candleSeries.setData(candles);
+      candleChart.timeScale().fitContent();
     }
-  ];
-
-  for (const attempt of attempts) {
-    try {
-      const res = await fetch(attempt.url, { signal: AbortSignal.timeout(5000) });
-      if (!res.ok) continue;
-      const raw = await res.json();
-      const candles = attempt.parse(raw);
-      if (!candles || !candles.length) continue;
-
-      // Guard: user may have switched while we were fetching
-      if (myGen !== chartStreamGen) {
-        console.log(`Discarding stale candles for ${pair}`);
-        return;
-      }
-
-      if (candleSeries) {
-        candleSeries.setData(candles);
-        candleChart.timeScale().fitContent();
-      }
-      const latest = candles[candles.length - 1];
-      if (latest) updatePriceDisplay(latest.close, pair);
-
-      console.log(`Candles loaded from ${attempt.name} for ${pair}`);
-      return;
-    } catch (e) {
-      console.warn(`${attempt.name} candles failed:`, e.message);
-    }
+    const latest = candles[candles.length - 1];
+    updatePriceDisplay(latest.close, pair);
+    if (status) status.textContent = data.source === 'simulated-development' ? 'Simulated chart data · development mode' : 'Market reference candles';
+    return;
+  } catch (e) {
+    console.warn('Server candle request failed; using browser-side demo candles:', e.message);
   }
 
-  console.error('All candle sources failed');
-  toast('Chart data unavailable', 'warn', 3000);
+  // Last-resort client fallback keeps the chart visible if the server candle
+  // endpoint is temporarily unavailable during local development.
+  if (myGen !== chartStreamGen) return;
+  const seconds = ({ '1m':60, '5m':300, '15m':900, '1h':3600, '4h':14400, '1d':86400 })[currentInterval] || 60;
+  let price = Number(window.__livePrice) || 68000;
+  const now = Math.floor(Date.now() / (seconds * 1000)) * seconds;
+  const candles = [];
+  for (let i = 149; i >= 0; i--) {
+    const open = price;
+    const close = Math.max(0.00000001, open * (1 + (Math.random() - 0.5) * 0.008));
+    const wick = Math.max(open, close) * (0.0002 + Math.random() * 0.001);
+    candles.push({ time: now - i * seconds, open, high: Math.max(open, close) + wick, low: Math.max(0.00000001, Math.min(open, close) - wick), close });
+    price = close;
+  }
+  if (candleSeries) {
+    candleSeries.setData(candles);
+    candleChart.timeScale().fitContent();
+  }
+  updatePriceDisplay(candles[candles.length - 1].close, pair);
+  if (status) status.textContent = 'Local simulated candles · server feed unavailable';
 }
 
 /* ---------------- LIVE STREAM ---------------- */
@@ -149,6 +136,7 @@ async function startLiveStream(pair) {
   // Bump generation — any previous stream is now stale
   chartStreamGen++;
   const myGen = chartStreamGen;
+  if (simulatedStreamHandle) { clearInterval(simulatedStreamHandle); simulatedStreamHandle = null; }
 
   currentSymbol = toBinanceSymbol(pair);
   currentBybitSymbol = toBybitSymbol(pair);
@@ -193,9 +181,10 @@ async function startLiveStream(pair) {
 }
 
 function startBinanceStream(myGen) {
-  const url = `wss://stream.binance.com:9443/ws/${currentSymbol}@kline_1m`;
+  const url = `wss://stream.binance.com:9443/ws/${currentSymbol}@kline_${currentInterval}`;
   let failed = false;
-  const ws = new WebSocket(url);
+  let ws;
+  try { ws = new WebSocket(url); } catch (e) { console.warn('Binance WebSocket unavailable:', e.message); startSimulatedStream(myGen); return; }
   binanceWs = ws;
 
   ws.onopen = () => console.log('Binance WS connected');
@@ -225,11 +214,14 @@ function startBinanceStream(myGen) {
   };
 
   ws.onerror = () => {
-    if (myGen !== chartStreamGen) return;   // stale → don't fall back
+    if (myGen !== chartStreamGen) return;
     if (failed) return;
     failed = true;
     console.warn('Binance WS failed — trying Bybit');
     startBybitStream(myGen);
+  };
+  ws.onclose = () => {
+    if (myGen === chartStreamGen && !failed) startBybitStream(myGen);
   };
 }
 
@@ -245,14 +237,16 @@ function startBybitStream(myGen) {
     binanceWs = null;
   }
 
-  const ws = new WebSocket('wss://stream.bybit.com/v5/public/spot');
+  let ws;
+  try { ws = new WebSocket('wss://stream.bybit.com/v5/public/spot'); }
+  catch (e) { console.warn('Bybit WebSocket unavailable:', e.message); startSimulatedStream(myGen); return; }
   binanceWs = ws;
 
   ws.onopen = () => {
     console.log('Bybit WS connected for', currentBybitSymbol);
     ws.send(JSON.stringify({
       op: 'subscribe',
-      args: [`kline.1.${currentBybitSymbol}`]
+      args: [`kline.${BYBIT_INTERVALS[currentInterval]}.${currentBybitSymbol}`]
     }));
   };
 
@@ -260,7 +254,7 @@ function startBybitStream(myGen) {
     if (myGen !== chartStreamGen) return;   // stale → ignore
     try {
       const data = JSON.parse(event.data);
-      if (!data.topic || !data.topic.startsWith('kline.')) return;
+      if (!data.topic || !data.topic.startsWith(`kline.${BYBIT_INTERVALS[currentInterval]}.`)) return;
       if (!data.data || !data.data[0]) return;
 
       const k = data.data[0];
@@ -283,30 +277,32 @@ function startBybitStream(myGen) {
 
   ws.onerror = () => {
     if (myGen !== chartStreamGen) return;
-    console.warn('Bybit WS failed');
+    console.warn('Bybit WS failed — using simulated chart updates');
+    startSimulatedStream(myGen);
+  };
+  ws.onclose = () => {
+    if (myGen === chartStreamGen) startSimulatedStream(myGen);
   };
 }
 
 function startSimulatedStream(myGen) {
+  if (myGen !== chartStreamGen) return;
+  if (simulatedStreamHandle) clearInterval(simulatedStreamHandle);
   console.warn('Running simulated drift (no exchange reachable)');
   let price = window.__livePrice || 68000;
 
-  const handle = setInterval(() => {
+  simulatedStreamHandle = setInterval(() => {
     if (myGen !== chartStreamGen) {
-      clearInterval(handle);   // stop when pair switches
+      clearInterval(simulatedStreamHandle);   // stop when pair switches
+      simulatedStreamHandle = null;
       return;
     }
     price = price * (1 + (Math.random() - 0.5) * 0.0005);
-    const bucket = Math.floor(Math.floor(Date.now() / 1000) / 60) * 60;
+    const seconds = ({'1m':60,'5m':300,'15m':900,'1h':3600,'4h':14400,'1d':86400})[currentInterval] || 60;
+    const bucket = Math.floor(Math.floor(Date.now() / 1000) / seconds) * seconds;
 
     if (candleSeries) {
-      candleSeries.update({
-        time: bucket,
-        open: price,
-        high: price,
-        low: price,
-        close: price
-      });
+      candleSeries.update({ time: bucket, open: price, high: price, low: price, close: price });
     }
     updatePriceDisplay(price, currentPairForLabel);
   }, 3000);
@@ -334,6 +330,15 @@ window.initTradeChart = async function (pair) {
   initCandleChart();
   await loadHistoricalCandles(pair);
   await startLiveStream(pair);
+};
+
+window.setTradeChartInterval = async function (interval) {
+  if (!BYBIT_INTERVALS[interval]) return;
+  currentInterval = interval;
+  if (candleChart) {
+    await loadHistoricalCandles(currentPairForLabel);
+    await startLiveStream(currentPairForLabel);
+  }
 };
 
 window.switchTradePair = async function (pair) {

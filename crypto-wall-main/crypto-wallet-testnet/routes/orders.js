@@ -1,4 +1,5 @@
 const express = require('express');
+const mongoose = require('mongoose');
 const Order = require('../models/Order');
 const User = require('../models/User');
 const Transaction = require('../models/Transaction');
@@ -7,410 +8,456 @@ const { auth } = require('../middleware/auth');
 const { notify } = require('../middleware/notify');
 const router = express.Router();
 
-const MARKETS = [
-  { pair: 'BTC/USDT',  base: 'BTC',  quote: 'USDT', decimals: 2 },
-  { pair: 'ETH/USDT',  base: 'ETH',  quote: 'USDT', decimals: 2 },
-  { pair: 'SOL/USDT',  base: 'SOL',  quote: 'USDT', decimals: 2 },
-  { pair: 'BNB/USDT',  base: 'BNB',  quote: 'USDT', decimals: 2 },
-  { pair: 'XRP/USDT',  base: 'XRP',  quote: 'USDT', decimals: 4 },
-  { pair: 'ADA/USDT',  base: 'ADA',  quote: 'USDT', decimals: 4 },
-  { pair: 'DOGE/USDT', base: 'DOGE', quote: 'USDT', decimals: 4 }
+// Prices are reference prices only. Order-book depth and recent tape remain simulated.
+const MARKET_ASSETS = [
+  ['BTC','bitcoin',2], ['ETH','ethereum',2], ['SOL','solana',3], ['BNB','binancecoin',2],
+  ['XRP','ripple',4], ['ADA','cardano',4], ['DOGE','dogecoin',5], ['LTC','litecoin',2],
+  ['TRX','tron',5], ['DOT','polkadot',3], ['AVAX','avalanche-2',3], ['LINK','chainlink',3],
+  ['BCH','bitcoin-cash',2], ['TON','the-open-network',3], ['NEAR','near',3], ['ATOM','cosmos',3], ['UNI','uniswap',3]
 ];
-
-function isSupported(pair) {
-  return MARKETS.some(m => m.pair === pair);
-}
-
-const exchangeState = { name: null, lastCheck: 0, ttl: 60_000 };
+const MARKETS = MARKET_ASSETS.map(([base, coinId, decimals]) => ({ pair: `${base}/USDT`, base, quote: 'USDT', decimals, coinId }));
+const marketByPair = new Map(MARKETS.map(m => [m.pair, m]));
+const isSupported = pair => marketByPair.has(pair);
+const priceCache = Object.fromEntries(MARKETS.map(m => [m.pair, { price: 0, ts: 0 }]));
+const CACHE_TTL = 2500;
+let priceProvider = 'binance';
+let providerCheckedAt = 0;
 
 async function detectExchange() {
-  if (exchangeState.name && Date.now() - exchangeState.lastCheck < exchangeState.ttl) {
-    return exchangeState.name;
-  }
-
-  const tests = [
-    { name: 'binance',   url: 'https://api.binance.com/api/v3/ticker/price?symbol=BTCUSDT' },
-    { name: 'bybit',     url: 'https://api.bybit.com/v5/market/tickers?category=spot&symbol=BTCUSDT' },
-    { name: 'coingecko', url: 'https://api.coingecko.com/api/v3/simple/price?ids=bitcoin&vs_currencies=usd' }
+  if (Date.now() - providerCheckedAt < 60000) return priceProvider;
+  const checks = [
+    ['binance','https://api.binance.com/api/v3/ticker/price?symbol=BTCUSDT'],
+    ['bybit','https://api.bybit.com/v5/market/tickers?category=spot&symbol=BTCUSDT'],
+    ['coingecko','https://api.coingecko.com/api/v3/simple/price?ids=bitcoin&vs_currencies=usd']
   ];
-
-  for (const t of tests) {
+  for (const [name,url] of checks) {
     try {
-      const res = await fetch(t.url, { signal: AbortSignal.timeout(3000) });
-      if (res.ok) {
-        if (exchangeState.name !== t.name) console.log(`✅ Market data: ${t.name}`);
-        exchangeState.name = t.name;
-        exchangeState.lastCheck = Date.now();
-        return t.name;
+      const r = await fetch(url, { signal: AbortSignal.timeout(3000) });
+      if (!r.ok) continue;
+      const j = await r.json();
+      const valid = name === 'binance' ? Number(j.price) > 0 : name === 'bybit' ? Number(j.result?.list?.[0]?.lastPrice) > 0 : Number(j.bitcoin?.usd) > 0;
+      if (valid) { priceProvider = name; providerCheckedAt = Date.now(); return name; }
+    } catch {}
+  }
+  priceProvider = 'fallback'; providerCheckedAt = Date.now(); return priceProvider;
+}
+
+async function fetchLivePrice(pair) {
+  const market = marketByPair.get(pair);
+  if (!market) return null;
+  const cached = priceCache[pair];
+  if (cached.price > 0 && Date.now() - cached.ts < CACHE_TTL) return cached.price;
+  const symbol = `${market.base}USDT`;
+  const providers = [
+    async () => {
+      const r = await fetch(`https://api.binance.com/api/v3/ticker/price?symbol=${symbol}`, { signal: AbortSignal.timeout(3000) });
+      if (!r.ok) return 0;
+      return Number((await r.json()).price);
+    },
+    async () => {
+      const r = await fetch(`https://api.bybit.com/v5/market/tickers?category=spot&symbol=${symbol}`, { signal: AbortSignal.timeout(3000) });
+      if (!r.ok) return 0;
+      return Number((await r.json()).result?.list?.[0]?.lastPrice);
+    },
+    async () => {
+      const r = await fetch(`https://api.coingecko.com/api/v3/simple/price?ids=${market.coinId}&vs_currencies=usd`, { signal: AbortSignal.timeout(3000) });
+      if (!r.ok) return 0;
+      return Number((await r.json())[market.coinId]?.usd);
+    }
+  ];
+  for (let i = 0; i < providers.length; i++) {
+    try {
+      const price = await providers[i]();
+      if (Number.isFinite(price) && price > 0) {
+        priceCache[pair] = { price, ts: Date.now() };
+        priceProvider = ['binance','bybit','coingecko'][i];
+        return price;
       }
     } catch {}
   }
-
-  exchangeState.name = 'fallback';
-  exchangeState.lastCheck = Date.now();
-  return 'fallback';
+  return cached.price || null;
 }
 
-const priceCache = {};
-MARKETS.forEach(m => { priceCache[m.pair] = { price: 0, ts: 0 }; });
-const CACHE_TTL = 3000;
-
-async function fetchLivePrice(pair) {
-  if (!isSupported(pair)) return null;
-  const cache = priceCache[pair];
-  if (cache && Date.now() - cache.ts < CACHE_TTL && cache.ts > 0) return cache.price;
-
-  const symbol = pair.replace('/', '').toUpperCase();
-  const exchange = await detectExchange();
-
+function finitePositive(value) { const n = Number(value); return Number.isFinite(n) && n > 0; }
+function roundMoney(n) { return Math.round((n + Number.EPSILON) * 1e8) / 1e8; }
+function assertTransactionSupport() {
+  // MongoDB multi-document transactions require a replica set or sharded cluster.
+  if (mongoose.connection.readyState !== 1) throw new Error('Database is not connected');
+}
+async function inTransaction(work) {
+  assertTransactionSupport();
+  const session = await mongoose.startSession();
+  let result;
   try {
-    if (exchange === 'binance') {
-      const res = await fetch(`https://api.binance.com/api/v3/ticker/price?symbol=${symbol}`);
-      if (res.ok) {
-        const j = await res.json();
-        const p = parseFloat(j.price);
-        if (p) { priceCache[pair] = { price: p, ts: Date.now() }; return p; }
-      }
-    } else if (exchange === 'bybit') {
-      const res = await fetch(`https://api.bybit.com/v5/market/tickers?category=spot&symbol=${symbol}`);
-      if (res.ok) {
-        const j = await res.json();
-        const p = parseFloat(j.result?.list?.[0]?.lastPrice);
-        if (p) { priceCache[pair] = { price: p, ts: Date.now() }; return p; }
-      }
-    } else if (exchange === 'coingecko') {
-      const coinId = pair.split('/')[0].toLowerCase();
-      const map = { btc: 'bitcoin', eth: 'ethereum', sol: 'solana', bnb: 'binancecoin',
-                    xrp: 'ripple', ada: 'cardano', doge: 'dogecoin' };
-      const id = map[coinId];
-      if (id) {
-        const res = await fetch(`https://api.coingecko.com/api/v3/simple/price?ids=${id}&vs_currencies=usd`);
-        if (res.ok) {
-          const j = await res.json();
-          const p = j[id]?.usd;
-          if (p) { priceCache[pair] = { price: p, ts: Date.now() }; return p; }
-        }
-      }
-    }
+    await session.withTransaction(async () => { result = await work(session); });
+    return result;
   } catch (e) {
-    console.warn(`fetchLivePrice (${exchange}) ${pair}:`, e.message);
-  }
-
-  return cache?.price || 0;
+    if (/replica set|Transaction numbers are only allowed|does not support transactions/i.test(e.message)) {
+      throw new Error('Trading is paused because MongoDB transactions are unavailable. Configure MongoDB as a replica set (or use a replica-set MongoDB cluster) before enabling internal trading.');
+    }
+    throw e;
+  } finally { await session.endSession(); }
 }
 
-/* ============================================================
-   POSITION HELPERS
-   ============================================================ */
-async function upsertPosition(userId, pair, base, deltaAmount, price, sl, tp) {
-  let pos = await Position.findOne({ user: userId, pair });
-  if (!pos) {
-    pos = new Position({ user: userId, pair, base, amount: 0, avgCost: 0, realized: 0 });
-  }
-
-  if (deltaAmount > 0) {
-    const newAmount = pos.amount + deltaAmount;
-    const newCost = (pos.amount * pos.avgCost) + (deltaAmount * price);
-    pos.avgCost = newCost / newAmount;
-    pos.amount = newAmount;
-    // Set or update SL/TP when opening/adding
-    if (sl) pos.stopLoss = sl;
-    if (tp) pos.takeProfit = tp;
+async function addToPosition(userId, pair, amount, price, sl, tp, session) {
+  const base = pair.split('/')[0];
+  let pos = await Position.findOne({ user: userId, pair }).session(session);
+  if (!pos) pos = new Position({ user: userId, pair, base, amount: 0, avgCost: 0, realized: 0 });
+  const nextAmount = pos.amount + amount;
+  if (amount > 0) {
+    pos.avgCost = nextAmount > 0 ? ((pos.amount * pos.avgCost) + amount * price) / nextAmount : price;
+    pos.amount = nextAmount;
+    if (sl > 0) pos.stopLoss = sl;
+    if (tp > 0) pos.takeProfit = tp;
   } else {
-    const sellAmount = Math.abs(deltaAmount);
-    const realizedPnl = sellAmount * (price - pos.avgCost);
-    pos.realized += realizedPnl;
-    pos.amount = Math.max(0, pos.amount - sellAmount);
-    if (pos.amount === 0) {
-      pos.avgCost = 0;
-      pos.stopLoss = 0;
-      pos.takeProfit = 0;
-    }
+    const sold = Math.abs(amount);
+    if (sold > pos.amount + 1e-10) throw new Error('Sell amount exceeds tracked position');
+    pos.realized += sold * (price - pos.avgCost);
+    pos.amount = Math.max(0, pos.amount - sold);
+    if (pos.amount <= 1e-10) { pos.amount = 0; pos.avgCost = 0; pos.stopLoss = 0; pos.takeProfit = 0; }
   }
-
   pos.updatedAt = new Date();
-  await pos.save();
+  await pos.save({ session });
   return pos;
 }
 
-/* ============================================================
-   ROUTES
-   ============================================================ */
+async function writeTradeTransaction({ userId, pair, side, amount, price, orderType, note, orderId }, session) {
+  const [base, quote] = pair.split('/');
+  const value = roundMoney(amount * price);
+  await Transaction.create([{
+    user: userId, type: 'earn', category: 'trade', direction: side === 'buy' ? 'debit' : 'credit',
+    currency: quote, amount: value, pair, side, quantity: amount, price, referenceId: String(orderId || ''), status: 'completed',
+    note: note || `${orderType.toUpperCase()} ${side.toUpperCase()} ${amount} ${base} @ ${price} ${quote}`
+  }], { session });
+}
 
+// Execute a previously reserved limit order only when its limit is marketable.
+async function tryFillLimit(orderId, referencePrice) {
+  return inTransaction(async session => {
+    const order = await Order.findOne({ _id: orderId, status: { $in: ['open','partial'] } }).session(session);
+    if (!order || order.type !== 'limit') return null;
+    const price = Number(referencePrice || await fetchLivePrice(order.pair));
+    if (!finitePositive(price)) return null;
+    const eligible = order.side === 'buy' ? price <= order.price : price >= order.price;
+    if (!eligible) return null;
+    const remaining = roundMoney(order.amount - order.filled);
+    if (remaining <= 1e-10) return null;
+    const [base, quote] = order.pair.split('/');
+    const user = await User.findById(order.user).session(session);
+    if (!user) throw new Error('Order owner not found');
+    if (!user.balances) user.balances = {};
+    if (!user.locked) user.locked = {};
+    const executionPrice = price;
+    if (order.side === 'buy') {
+      const reserved = roundMoney(order.price * remaining);
+      const actual = roundMoney(executionPrice * remaining);
+      if ((user.locked[quote] || 0) + 1e-8 < reserved) throw new Error('Reserved quote balance is inconsistent');
+      user.locked[quote] = roundMoney((user.locked[quote] || 0) - reserved);
+      user.balances[quote] = roundMoney((user.balances[quote] || 0) + reserved - actual);
+      user.balances[base] = roundMoney((user.balances[base] || 0) + remaining);
+      await addToPosition(user._id, order.pair, remaining, executionPrice, order.stopLoss, order.takeProfit, session);
+    } else {
+      if ((user.locked[base] || 0) + 1e-8 < remaining) throw new Error('Reserved asset balance is inconsistent');
+      user.locked[base] = roundMoney((user.locked[base] || 0) - remaining);
+      user.balances[quote] = roundMoney((user.balances[quote] || 0) + executionPrice * remaining);
+      const pos = await Position.findOne({ user: user._id, pair: order.pair }).session(session);
+      if (pos && pos.amount > 0) await addToPosition(user._id, order.pair, -Math.min(remaining, pos.amount), executionPrice, 0, 0, session);
+    }
+    await user.save({ session });
+    const oldFilled = order.filled || 0;
+    order.avgFillPrice = oldFilled > 0
+      ? ((oldFilled * (order.avgFillPrice || order.price)) + remaining * executionPrice) / (oldFilled + remaining)
+      : executionPrice;
+    order.filled = roundMoney(oldFilled + remaining);
+    order.status = order.filled + 1e-10 >= order.amount ? 'filled' : 'partial';
+    order.updatedAt = new Date();
+    await order.save({ session });
+    await writeTradeTransaction({ userId: user._id, pair: order.pair, side: order.side, amount: remaining, price: executionPrice, orderType: 'limit', orderId: order._id }, session);
+    return { order: order.toObject(), userId: String(user._id), amount: remaining, price: executionPrice };
+  });
+}
+
+// Markets and reference prices
 router.get('/markets', auth, async (req, res) => {
   try {
-    const withPrices = await Promise.all(MARKETS.map(async m => ({
-      ...m,
-      price: await fetchLivePrice(m.pair)
-    })));
-    res.json(withPrices);
+    const q = String(req.query.q || '').trim().toUpperCase();
+    const list = MARKETS.filter(m => !q || m.pair.includes(q) || m.base.includes(q));
+    res.json(await Promise.all(list.map(async m => ({ ...m, price: await fetchLivePrice(m.pair) }))));
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
-router.get('/health', async (req, res) => {
-  try { res.json({ exchange: await detectExchange() }); }
-  catch (e) { res.status(500).json({ error: e.message }); }
+// Candles are fetched server-side to avoid browser CORS/network restrictions.
+// If an exchange does not provide the selected market/interval, return a clearly
+// labelled simulated development series so the chart remains usable.
+router.get('/candles/:pair', auth, async (req, res) => {
+  const pair = String(req.params.pair || '').replace('-', '/').toUpperCase();
+  const market = marketByPair.get(pair);
+  const interval = String(req.query.interval || '1m');
+  const intervalMs = { '1m': 60000, '5m': 300000, '15m': 900000, '1h': 3600000, '4h': 14400000, '1d': 86400000 }[interval];
+  if (!market) return res.status(400).json({ error: 'Unsupported trading pair' });
+  if (!intervalMs) return res.status(400).json({ error: 'Unsupported chart interval' });
+  const symbol = `${market.base}USDT`;
+  const limit = 150;
+  const sources = [
+    async () => {
+      const r = await fetch(`https://api.binance.com/api/v3/klines?symbol=${symbol}&interval=${interval}&limit=${limit}`, { signal: AbortSignal.timeout(5000) });
+      if (!r.ok) throw new Error(`Binance HTTP ${r.status}`);
+      return (await r.json()).map(k => ({ time: Math.floor(k[0] / 1000), open: +k[1], high: +k[2], low: +k[3], close: +k[4] }));
+    },
+    async () => {
+      const bybitInterval = { '1m':'1', '5m':'5', '15m':'15', '1h':'60', '4h':'240', '1d':'D' }[interval];
+      const r = await fetch(`https://api.bybit.com/v5/market/kline?category=spot&symbol=${symbol}&interval=${bybitInterval}&limit=${limit}`, { signal: AbortSignal.timeout(5000) });
+      if (!r.ok) throw new Error(`Bybit HTTP ${r.status}`);
+      const j = await r.json();
+      if (j.retCode !== 0) throw new Error(j.retMsg || 'Bybit candle request failed');
+      return (j.result?.list || []).slice().reverse().map(k => ({ time: Math.floor(+k[0] / 1000), open: +k[1], high: +k[2], low: +k[3], close: +k[4] }));
+    }
+  ];
+  for (const source of sources) {
+    try {
+      const candles = await source();
+      if (candles.length) return res.json({ pair, interval, source: 'market-reference', candles });
+    } catch (e) { console.warn(`Candle provider failed for ${pair} (${interval}):`, e.message); }
+  }
+  try {
+    const reference = await fetchLivePrice(pair);
+    if (!finitePositive(reference)) throw new Error('No reference price available for simulated chart');
+    const end = Math.floor(Date.now() / intervalMs) * intervalMs;
+    let previous = reference;
+    const candles = [];
+    // A bounded random walk around the current reference price for development.
+    for (let i = limit - 1; i >= 0; i--) {
+      const time = Math.floor((end - i * intervalMs) / 1000);
+      const open = previous;
+      const change = (Math.random() - 0.5) * 0.012;
+      const close = Math.max(reference * 0.5, Math.min(reference * 1.5, open * (1 + change)));
+      const wick = Math.abs(close - open) * (0.25 + Math.random() * 1.2) + reference * 0.00015;
+      candles.push({ time, open, high: Math.max(open, close) + wick, low: Math.max(0.00000001, Math.min(open, close) - wick), close });
+      previous = close;
+    }
+    return res.json({ pair, interval, source: 'simulated-development', candles });
+  } catch (e) {
+    return res.status(503).json({ error: `Chart candles unavailable: ${e.message}` });
+  }
 });
+router.get('/health', async (req, res) => { res.json({ exchange: await detectExchange(), execution: 'internal-simulated' }); });
 
+// Simulated order book and recent trades intentionally retained for development.
 router.get('/book/:pair', auth, async (req, res) => {
   try {
     const pair = req.params.pair.replace('-', '/');
     if (!isSupported(pair)) return res.status(400).json({ error: 'Unsupported pair' });
     const mid = await fetchLivePrice(pair);
-    if (!mid) return res.status(400).json({ error: 'No price' });
-
+    if (!mid) return res.status(400).json({ error: 'No reference price available' });
     const bids = [], asks = [];
     for (let i = 0; i < 12; i++) {
       const bd = mid * (1 - 0.0006 * (i + 1) - Math.random() * 0.0004);
-      const bA = +(0.05 + Math.random() * 2).toFixed(4);
-      bids.push({ price: +bd.toFixed(2), amount: bA, total: +(bd * bA).toFixed(2) });
       const ad = mid * (1 + 0.0006 * (i + 1) + Math.random() * 0.0004);
-      const aA = +(0.05 + Math.random() * 2).toFixed(4);
-      asks.push({ price: +ad.toFixed(2), amount: aA, total: +(ad * aA).toFixed(2) });
+      const bA = +(0.05 + Math.random() * 2).toFixed(4), aA = +(0.05 + Math.random() * 2).toFixed(4);
+      bids.push({ price: +bd.toFixed(marketByPair.get(pair).decimals), amount: bA, total: +(bd*bA).toFixed(2) });
+      asks.push({ price: +ad.toFixed(marketByPair.get(pair).decimals), amount: aA, total: +(ad*aA).toFixed(2) });
     }
-    bids.sort((a, b) => b.price - a.price);
-    asks.sort((a, b) => a.price - b.price);
-    res.json({ pair, mid, bids, asks, updatedAt: new Date() });
+    bids.sort((a,b) => b.price-a.price); asks.sort((a,b) => a.price-b.price);
+    res.json({ pair, mid, bids, asks, simulated: true, updatedAt: new Date() });
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
-
 router.get('/trades/:pair', auth, async (req, res) => {
   try {
     const pair = req.params.pair.replace('-', '/');
     if (!isSupported(pair)) return res.status(400).json({ error: 'Unsupported pair' });
     const mid = await fetchLivePrice(pair);
-    if (!mid) return res.status(400).json({ error: 'No price' });
-
-    const trades = [];
-    for (let i = 0; i < 20; i++) {
-      const side = Math.random() > 0.5 ? 'buy' : 'sell';
-      const price = mid * (1 + (Math.random() - 0.5) * 0.004);
-      const amount = +(0.001 + Math.random() * 0.5).toFixed(4);
-      const ago = Math.floor(Math.random() * 300);
-      trades.push({ side, price: +price.toFixed(2), amount, time: new Date(Date.now() - ago * 1000) });
-    }
-    trades.sort((a, b) => b.time - a.time);
+    if (!mid) return res.status(400).json({ error: 'No reference price available' });
+    const trades = Array.from({ length: 20 }, () => ({
+      side: Math.random() > 0.5 ? 'buy' : 'sell',
+      price: +(mid * (1 + (Math.random() - 0.5) * 0.004)).toFixed(marketByPair.get(pair).decimals),
+      amount: +(0.001 + Math.random() * 0.5).toFixed(4),
+      time: new Date(Date.now() - Math.floor(Math.random() * 300) * 1000)
+    })).sort((a,b) => b.time-a.time);
     res.json(trades);
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
 router.get('/my', auth, async (req, res) => {
-  const orders = await Order.find({ user: req.user._id }).sort({ createdAt: -1 }).limit(50);
+  const orders = await Order.find({ user: req.user._id }).sort({ createdAt: -1 }).limit(100).lean();
   res.json(orders);
 });
-
-/* GET my positions (for portfolio close buttons) */
+router.get('/history', auth, async (req, res) => {
+  try {
+    const filter = { user: req.user._id, status: { $in: ['filled','cancelled'] } };
+    if (req.query.pair && isSupported(req.query.pair)) filter.pair = req.query.pair;
+    const rows = await Order.find(filter).sort({ updatedAt: -1, createdAt: -1 }).limit(200).lean();
+    res.json(rows);
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
 router.get('/positions', auth, async (req, res) => {
-  const positions = await Position.find({ user: req.user._id, amount: { $gt: 0 } });
+  const positions = await Position.find({ user: req.user._id, amount: { $gt: 0 } }).lean();
   res.json(positions);
 });
 
-/* POST close a position at market price */
+async function closePositionAtomic(positionId, userId, price, reason) {
+  return inTransaction(async session => {
+    const pos = await Position.findOne({ _id: positionId, user: userId, amount: { $gt: 0 } }).session(session);
+    if (!pos) return null;
+    const user = await User.findById(userId).session(session);
+    if (!user) throw new Error('User not found');
+    const [base, quote] = pos.pair.split('/');
+    const amount = pos.amount;
+    if ((user.balances[base] || 0) + 1e-8 < amount) throw new Error(`Insufficient ${base} balance to close position`);
+    const proceeds = roundMoney(price * amount);
+    const pnl = roundMoney(amount * (price - pos.avgCost));
+    user.balances[base] = roundMoney((user.balances[base] || 0) - amount);
+    user.balances[quote] = roundMoney((user.balances[quote] || 0) + proceeds);
+    pos.realized = roundMoney((pos.realized || 0) + pnl);
+    pos.amount = 0; pos.avgCost = 0; pos.stopLoss = 0; pos.takeProfit = 0; pos.updatedAt = new Date();
+    await user.save({ session }); await pos.save({ session });
+    const [baseAsset] = pos.pair.split('/');
+    await Order.create([{
+      user: userId, side: 'sell', pair: pos.pair, type: 'market', price,
+      amount, filled: amount, avgFillPrice: price, status: 'filled',
+      closeReason: reason
+    }], { session });
+    await Transaction.create([{
+      user: userId, type: 'earn', category: 'trade_close', direction: 'credit', currency: quote, amount: proceeds,
+      pair: pos.pair, side: 'sell', quantity: amount, price, referenceId: String(pos._id), status: 'completed',
+      note: `${reason} close ${pos.pair}: sold ${amount} ${baseAsset} @ ${price}; realized PnL ${pnl} ${quote}`
+    }], { session });
+    return { proceeds, pnl, pair: pos.pair, amount, base, quote };
+  });
+}
+
 router.post('/positions/:id/close', auth, async (req, res) => {
   try {
-    const pos = await Position.findOne({ _id: req.params.id, user: req.user._id });
-    if (!pos || pos.amount <= 0) return res.status(404).json({ error: 'Position not found' });
-
-    const mid = await fetchLivePrice(pos.pair);
-    if (!mid) return res.status(400).json({ error: 'Price unavailable' });
-
-    const user = await User.findById(req.user._id);
-    const [base, quote] = pos.pair.split('/');
-    const proceeds = mid * pos.amount;
-
-    user.balances[base] = Math.max(0, (user.balances[base] || 0) - pos.amount);
-    user.balances[quote] = (user.balances[quote] || 0) + proceeds;
-    await user.save();
-
-    const realizedPnl = pos.amount * (mid - pos.avgCost);
-
-    // Record PnL as a transaction, then DELETE the position entirely
-    await Transaction.create({
-      user: user._id, type: 'earn',
-      currency: quote, amount: proceeds, status: 'completed',
-      note: `Closed ${pos.pair} · ${pos.amount.toFixed(6)} ${base} @ ${mid.toFixed(2)} · PnL ${realizedPnl >= 0 ? '+' : ''}${realizedPnl.toFixed(2)}`
-    });
-
-    await notify(user._id, 'system', 'Position closed',
-      `Sold ${pos.amount.toFixed(6)} ${base} @ ${mid.toFixed(2)} · PnL ${realizedPnl >= 0 ? '+' : ''}${realizedPnl.toFixed(2)} USDT`);
-
-    await Position.deleteOne({ _id: pos._id });
-
-    res.json({ closed: true, realizedPnl, proceeds });
+    const pos = await Position.findOne({ _id: req.params.id, user: req.user._id, amount: { $gt: 0 } });
+    if (!pos) return res.status(404).json({ error: 'Position not found' });
+    const price = await fetchLivePrice(pos.pair);
+    if (!finitePositive(price)) return res.status(400).json({ error: 'Price unavailable' });
+    const result = await closePositionAtomic(pos._id, req.user._id, price, 'Manual');
+    if (!result) return res.status(409).json({ error: 'Position was already closed' });
+    await notify(req.user._id, 'system', 'Position closed', `Sold ${result.amount} ${result.base} @ ${price}; PnL ${result.pnl} ${result.quote}`).catch(() => {});
+    res.json({ closed: true, ...result });
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
-/* POST place order (with optional SL/TP attachments) */
 router.post('/', auth, async (req, res) => {
   try {
-    const { side, pair, type = 'limit', price, amount, stopLoss, takeProfit } = req.body;
-
-    if (!['buy', 'sell'].includes(side)) return res.status(400).json({ error: 'Invalid side' });
-    if (!isSupported(pair)) return res.status(400).json({ error: 'Unsupported pair' });
-
-    const mid = await fetchLivePrice(pair);
-    if (!mid) return res.status(400).json({ error: 'Price unavailable' });
-
-    const amt = Number(amount);
-    if (!amt || amt <= 0) return res.status(400).json({ error: 'Invalid amount' });
-
-    const sl = Number(stopLoss) || 0;
-    const tp = Number(takeProfit) || 0;
-
-    // Sanity checks for SL/TP
-    const fillPriceEstimate = type === 'market' ? mid : Number(price) || mid;
-    if (sl > 0 && side === 'buy' && sl >= fillPriceEstimate)
-      return res.status(400).json({ error: 'Stop-loss must be below entry price for buy orders' });
-    if (tp > 0 && side === 'buy' && tp <= fillPriceEstimate)
-      return res.status(400).json({ error: 'Take-profit must be above entry price for buy orders' });
-    if (sl > 0 && side === 'sell' && sl <= fillPriceEstimate)
-      return res.status(400).json({ error: 'Stop-loss must be above entry price for sell orders' });
-    if (tp > 0 && side === 'sell' && tp >= fillPriceEstimate)
-      return res.status(400).json({ error: 'Take-profit must be below entry price for sell orders' });
-
+    const { side, pair, type = 'limit' } = req.body;
+    const amount = Number(req.body.amount), priceInput = Number(req.body.price);
+    const sl = req.body.stopLoss === '' || req.body.stopLoss == null ? 0 : Number(req.body.stopLoss);
+    const tp = req.body.takeProfit === '' || req.body.takeProfit == null ? 0 : Number(req.body.takeProfit);
+    if (!['buy','sell'].includes(side)) return res.status(400).json({ error: 'Invalid side' });
+    if (!isSupported(pair)) return res.status(400).json({ error: 'Unsupported trading pair' });
+    if (!['market','limit'].includes(type)) return res.status(400).json({ error: 'Invalid order type' });
+    if (!finitePositive(amount) || amount > 1e9) return res.status(400).json({ error: 'Enter a valid amount' });
+    if (sl < 0 || tp < 0 || !Number.isFinite(sl) || !Number.isFinite(tp)) return res.status(400).json({ error: 'Invalid stop-loss or take-profit price' });
+    if (type === 'limit' && !finitePositive(priceInput)) return res.status(400).json({ error: 'Enter a valid limit price' });
+    if (side === 'sell' && (sl > 0 || tp > 0)) return res.status(400).json({ error: 'Attach stop-loss and take-profit to buy orders/long positions only' });
+    const marketPrice = await fetchLivePrice(pair);
+    if (!finitePositive(marketPrice)) return res.status(400).json({ error: 'Reference price unavailable' });
+    const limitPrice = type === 'limit' ? priceInput : marketPrice;
+    const estimatedNotional = amount * limitPrice;
+    if (!Number.isFinite(estimatedNotional) || estimatedNotional < 1 || estimatedNotional > 1000000) return res.status(400).json({ error: 'Order value must be between 1 and 1,000,000 USDT' });
+    if (sl > 0 && sl >= limitPrice) return res.status(400).json({ error: 'Stop-loss must be below the entry price' });
+    if (tp > 0 && tp <= limitPrice) return res.status(400).json({ error: 'Take-profit must be above the entry price' });
     const [base, quote] = pair.split('/');
-    const user = await User.findById(req.user._id);
 
-    // MARKET — instant fill
-    if (type === 'market') {
-      const fillPrice = mid;
-      const cost = fillPrice * amt;
-
+    const created = await inTransaction(async session => {
+      const user = await User.findById(req.user._id).session(session);
+      if (!user) throw new Error('User not found');
+      if (!user.balances) user.balances = {}; if (!user.locked) user.locked = {};
+      const executionPrice = type === 'market' ? marketPrice : limitPrice;
       if (side === 'buy') {
-        if (user.balances[quote] < cost)
-          return res.status(400).json({ error: `Insufficient ${quote}` });
-        user.balances[quote] -= cost;
-        user.balances[base] = (user.balances[base] || 0) + amt;
+        const reserve = roundMoney(limitPrice * amount);
+        if ((user.balances[quote] || 0) + 1e-8 < reserve) throw new Error(`Insufficient available ${quote}`);
+        if (type === 'limit') {
+          user.balances[quote] = roundMoney((user.balances[quote] || 0) - reserve);
+          user.locked[quote] = roundMoney((user.locked[quote] || 0) + reserve);
+        } else {
+          const cost = roundMoney(executionPrice * amount);
+          user.balances[quote] = roundMoney((user.balances[quote] || 0) - cost);
+          user.balances[base] = roundMoney((user.balances[base] || 0) + amount);
+          await addToPosition(user._id, pair, amount, executionPrice, sl, tp, session);
+        }
       } else {
-        if (user.balances[base] < amt)
-          return res.status(400).json({ error: `Insufficient ${base}` });
-        user.balances[base] -= amt;
-        user.balances[quote] = (user.balances[quote] || 0) + cost;
+        if ((user.balances[base] || 0) + 1e-8 < amount) throw new Error(`Insufficient available ${base}`);
+        if (type === 'limit') {
+          user.balances[base] = roundMoney((user.balances[base] || 0) - amount);
+          user.locked[base] = roundMoney((user.locked[base] || 0) + amount);
+        } else {
+          user.balances[base] = roundMoney((user.balances[base] || 0) - amount);
+          user.balances[quote] = roundMoney((user.balances[quote] || 0) + executionPrice * amount);
+          const pos = await Position.findOne({ user: user._id, pair }).session(session);
+          if (pos && pos.amount > 0) await addToPosition(user._id, pair, -Math.min(amount, pos.amount), executionPrice, 0, 0, session);
+        }
       }
-      await user.save();
-      await upsertPosition(user._id, pair, base, side === 'buy' ? amt : -amt, fillPrice, sl, tp);
-
-      const order = await Order.create({
-        user: user._id, side, pair, type: 'market',
-        price: fillPrice, amount: amt, filled: amt, status: 'filled',
-        stopLoss: sl, takeProfit: tp
-      });
-
-      await Transaction.create({
-        user: user._id, type: 'earn',
-        currency: side === 'buy' ? base : quote,
-        amount: side === 'buy' ? amt : cost,
-        status: 'completed',
-        note: `Market ${side.toUpperCase()} ${amt} ${base} @ ${fillPrice} ${quote}${sl ? ` · SL ${sl}` : ''}${tp ? ` · TP ${tp}` : ''}`
-      });
-
-      await notify(user._id, 'system', 'Market order filled',
-        `${side.toUpperCase()} ${amt} ${base} @ ${fillPrice} ${quote}${sl ? ` · SL ${sl}` : ''}${tp ? ` · TP ${tp}` : ''}`);
-
-      return res.json(order);
-    }
-
-    // LIMIT — lock funds, wait for fill
-    const p = Number(price) || mid;
-    if (p <= 0) return res.status(400).json({ error: 'Invalid price' });
-
-    if (side === 'buy') {
-      const cost = p * amt;
-      if (user.balances[quote] < cost)
-        return res.status(400).json({ error: `Insufficient ${quote}` });
-      user.balances[quote] -= cost;
-      user.locked[quote] = (user.locked[quote] || 0) + cost;
-    } else {
-      if (user.balances[base] < amt)
-        return res.status(400).json({ error: `Insufficient ${base}` });
-      user.balances[base] -= amt;
-      user.locked[base] = (user.locked[base] || 0) + amt;
-    }
-    await user.save();
-
-    const order = await Order.create({
-      user: user._id, side, pair, type: 'limit', price: p, amount: amt,
-      stopLoss: sl, takeProfit: tp
+      await user.save({ session });
+      const order = await Order.create([{
+        user: user._id, side, pair, type, price: limitPrice, amount,
+        filled: type === 'market' ? amount : 0,
+        avgFillPrice: type === 'market' ? executionPrice : 0,
+        status: type === 'market' ? 'filled' : 'open', stopLoss: sl, takeProfit: tp
+      }], { session });
+      if (type === 'market') await writeTradeTransaction({ userId: user._id, pair, side, amount, price: executionPrice, orderType: 'market', orderId: order[0]._id }, session);
+      return order[0].toObject();
     });
-
-    const diff = Math.abs(p - mid) / mid;
-    if (diff < 0.003) {
-      setTimeout(() => tryFillLimit(order._id).catch(() => {}), 3000);
-    }
-
-    await notify(user._id, 'system', 'Limit order placed',
-      `${side.toUpperCase()} ${amt} ${base} @ ${p} ${quote}${sl ? ` · SL ${sl}` : ''}${tp ? ` · TP ${tp}` : ''}`);
-    res.json(order);
-  } catch (e) { res.status(500).json({ error: e.message }); }
+    if (created.status === 'filled') await notify(req.user._id, 'system', 'Market order filled', `${side.toUpperCase()} ${amount} ${base} @ ${marketPrice} ${quote}`).catch(() => {});
+    else await notify(req.user._id, 'system', 'Limit order placed', `${side.toUpperCase()} ${amount} ${base} @ ${limitPrice} ${quote}`).catch(() => {});
+    res.json(created);
+  } catch (e) {
+    const status = /Insufficient|valid|Unsupported|Invalid|below|above|Attach/i.test(e.message) ? 400 : 500;
+    res.status(status).json({ error: e.message });
+  }
 });
 
 router.post('/:id/cancel', auth, async (req, res) => {
   try {
-    const order = await Order.findOne({ _id: req.params.id, user: req.user._id });
-    if (!order) return res.status(404).json({ error: 'Order not found' });
-    if (!['open', 'partial'].includes(order.status))
-      return res.status(400).json({ error: 'Cannot cancel' });
-
-    const [base, quote] = order.pair.split('/');
-    const user = await User.findById(req.user._id);
-    const remaining = order.amount - order.filled;
-
-    if (order.side === 'buy') {
-      const refund = order.price * remaining;
-      user.locked[quote] = Math.max(0, (user.locked[quote] || 0) - refund);
-      user.balances[quote] += refund;
-    } else {
-      user.locked[base] = Math.max(0, (user.locked[base] || 0) - remaining);
-      user.balances[base] += remaining;
-    }
-    await user.save();
-
-    order.status = 'cancelled';
-    order.updatedAt = new Date();
-    await order.save();
-
-    await notify(user._id, 'system', 'Order cancelled',
-      `${order.side.toUpperCase()} ${order.amount} ${base}`);
-    res.json(order);
+    const cancelled = await inTransaction(async session => {
+      const order = await Order.findOne({ _id: req.params.id, user: req.user._id, status: { $in: ['open','partial'] } }).session(session);
+      if (!order) return null;
+      const user = await User.findById(req.user._id).session(session);
+      if (!user) throw new Error('User not found');
+      const remaining = roundMoney(order.amount - order.filled);
+      const [base, quote] = order.pair.split('/');
+      if (order.side === 'buy') {
+        const refund = roundMoney(order.price * remaining);
+        if ((user.locked[quote] || 0) + 1e-8 < refund) throw new Error('Locked quote balance is inconsistent');
+        user.locked[quote] = roundMoney((user.locked[quote] || 0) - refund);
+        user.balances[quote] = roundMoney((user.balances[quote] || 0) + refund);
+      } else {
+        if ((user.locked[base] || 0) + 1e-8 < remaining) throw new Error('Locked asset balance is inconsistent');
+        user.locked[base] = roundMoney((user.locked[base] || 0) - remaining);
+        user.balances[base] = roundMoney((user.balances[base] || 0) + remaining);
+      }
+      order.status = 'cancelled'; order.updatedAt = new Date();
+      await user.save({ session }); await order.save({ session });
+      return order.toObject();
+    });
+    if (!cancelled) return res.status(409).json({ error: 'Order not found or no longer cancellable' });
+    await notify(req.user._id, 'system', 'Order cancelled', `${cancelled.side.toUpperCase()} ${cancelled.amount} ${cancelled.pair}`).catch(() => {});
+    res.json(cancelled);
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
-async function tryFillLimit(orderId) {
-  const order = await Order.findById(orderId);
-  if (!order || !['open', 'partial'].includes(order.status)) return;
-
-  const [base, quote] = order.pair.split('/');
-  const user = await User.findById(order.user);
-  const remaining = order.amount - order.filled;
-  const fillAmount = remaining;
-
-  if (order.side === 'buy') {
-    const cost = order.price * fillAmount;
-    user.locked[quote] = Math.max(0, (user.locked[quote] || 0) - cost);
-    user.balances[base] = (user.balances[base] || 0) + fillAmount;
-    await upsertPosition(user._id, order.pair, base, fillAmount, order.price, order.stopLoss, order.takeProfit);
-  } else {
-    user.locked[base] = Math.max(0, (user.locked[base] || 0) - fillAmount);
-    user.balances[quote] = (user.balances[quote] || 0) + (order.price * fillAmount);
-    await upsertPosition(user._id, order.pair, base, -fillAmount, order.price);
-  }
-  await user.save();
-
-  order.filled += fillAmount;
-  order.status = 'filled';
-  order.updatedAt = new Date();
-  await order.save();
-
-  await Transaction.create({
-    user: user._id, type: 'earn',
-    currency: order.side === 'buy' ? base : quote,
-    amount: order.side === 'buy' ? fillAmount : (order.price * fillAmount),
-    status: 'completed',
-    note: `Order filled: ${order.side.toUpperCase()} ${fillAmount} ${base} @ ${order.price} ${quote}`
-  });
-
-  await notify(user._id, 'system', 'Order filled',
-    `${order.side.toUpperCase()} ${fillAmount} ${base} @ ${order.price} ${quote}`);
+// Persistent matcher: price condition is checked on every pass, not a one-shot timeout.
+let matcherRunning = false;
+async function matchOpenOrders() {
+  if (matcherRunning) return;
+  matcherRunning = true;
+  try {
+    const orders = await Order.find({ type: 'limit', status: { $in: ['open','partial'] } }).sort({ createdAt: 1 }).limit(250).lean();
+    for (const order of orders) {
+      const price = await fetchLivePrice(order.pair);
+      if (!finitePositive(price)) continue;
+      const eligible = order.side === 'buy' ? price <= order.price : price >= order.price;
+      if (!eligible) continue;
+      try {
+        const result = await tryFillLimit(order._id, price);
+        if (result) await notify(result.userId, 'system', 'Limit order filled', `${result.amount} ${result.order.pair} @ ${result.price}`).catch(() => {});
+      } catch (e) { console.error('Limit fill failed:', e.message); }
+    }
+  } catch (e) { console.error('Limit matcher:', e.message); }
+  finally { matcherRunning = false; }
 }
+const matcherTimer = setInterval(matchOpenOrders, 2000);
+if (matcherTimer.unref) matcherTimer.unref();
 
 module.exports = router;

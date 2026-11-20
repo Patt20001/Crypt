@@ -5,33 +5,46 @@ let bookInterval = null;
 let tradesInterval = null;
 let positionsInterval = null;
 let balances = { USDT: 0, BTC: 0, ETH: 0 };
+let markets = [];
+let currentMarketPrice = 0;
+let chartInterval = '1m';
 
 if (user) {
   document.addEventListener('DOMContentLoaded', init);
 }
 
 async function init() {
+  await loadMarkets();
   await selectPair(currentPair);
   await loadBalances();
   await loadMyOrders();
-  await loadMyPositions();   // 👈 NEW
+  await loadMyPositions();
+  await loadTradingHistory();
 
   bookInterval = setInterval(refreshBook, 2000);
   tradesInterval = setInterval(refreshTrades, 5000);
-  positionsInterval = setInterval(loadMyPositions, 15000);   // 👈 auto-refresh positions every 15s
+  positionsInterval = setInterval(() => { loadMyPositions(); loadTradingHistory(); }, 15000);   // 👈 auto-refresh positions every 15s
 
-  if (window.initTradeChart) {
-    await window.initTradeChart(currentPair);
-  }
+  if (window.setTradeChartInterval) await window.setTradeChartInterval(chartInterval);
+  document.querySelectorAll('[data-interval]').forEach(el => el.classList.toggle('active', el.dataset.interval === chartInterval));
 }
 
 window.selectPair = async function (pair) {
   currentPair = pair;
-  document.querySelectorAll('[data-pair]').forEach(el => {
-    el.classList.toggle('active', el.dataset.pair === pair);
-  });
+  const pairSelect = document.getElementById('market-list');
+  if (pairSelect && pairSelect.value !== pair) pairSelect.value = pair;
 
   await Promise.all([refreshBook(), refreshTrades()]);
+  const priceInput = document.getElementById('order-price');
+  if (priceInput && document.getElementById('order-type').value === 'limit' && currentMarketPrice > 0) {
+    const market = markets.find(m => m.pair === pair);
+    priceInput.value = currentMarketPrice.toFixed(market?.decimals ?? 2);
+  }
+  const slInput = document.getElementById('order-sl');
+  const tpInput = document.getElementById('order-tp');
+  if (slInput) slInput.value = '';
+  if (tpInput) tpInput.value = '';
+  updateOrderTotal();
   updateSubmitLabel();
   updateAvailHint();
 
@@ -40,6 +53,67 @@ window.selectPair = async function (pair) {
     await window.switchTradePair(pair);
   }
 }; 
+
+async function loadMarkets() {
+  try {
+    markets = await api('/api/orders/markets');
+    renderMarkets(markets);
+    const filter = document.getElementById('history-pair-filter');
+    if (filter) filter.innerHTML = '<option value="">All markets</option>' + markets.map(m => `<option value="${m.pair}">${m.pair}</option>`).join('');
+  } catch (e) { toast(`Could not load markets: ${e.message}`, 'error'); }
+}
+
+function renderMarkets(list) {
+  const el = document.getElementById('market-list');
+  if (!el) return;
+  const previous = el.value || currentPair;
+  if (!list.length) {
+    el.innerHTML = '<option value="">No markets match your search</option>';
+    el.disabled = true;
+    return;
+  }
+  el.disabled = false;
+  el.innerHTML = list.map(m => `<option value="${m.pair}">${m.pair} · ${m.base}</option>`).join('');
+  el.value = list.some(m => m.pair === currentPair) ? currentPair : (list.some(m => m.pair === previous) ? previous : '');
+}
+
+window.filterMarkets = function (query) {
+  const q = String(query || '').trim().toUpperCase();
+  renderMarkets(markets.filter(m => m.pair.includes(q) || m.base.includes(q)));
+};
+
+window.setChartInterval = async function (interval) {
+  chartInterval = interval;
+  document.querySelectorAll('[data-interval]').forEach(el => el.classList.toggle('active', el.dataset.interval === interval));
+  if (window.setTradeChartInterval) await window.setTradeChartInterval(interval);
+};
+
+window.setAmountPercent = function (percent) {
+  const [base, quote] = currentPair.split('/');
+  const type = document.getElementById('order-type').value;
+  const available = currentSide === 'buy' ? (balances[quote] || 0) : (balances[base] || 0);
+  const price = type === 'market' ? currentMarketPrice : (Number(document.getElementById('order-price').value) || currentMarketPrice);
+  if (!price || price <= 0) return toast('Price is not available yet', 'warn');
+  const amount = currentSide === 'buy' ? (available * percent / 100) / price : available * percent / 100;
+  document.getElementById('order-amount').value = amount.toFixed(8).replace(/0+$/, '').replace(/\.$/, '');
+  updateOrderTotal();
+};
+
+window.loadTradingHistory = async function () {
+  const el = document.getElementById('trading-history');
+  if (!el) return;
+  try {
+    const pair = document.getElementById('history-pair-filter')?.value || '';
+    const rows = await api(`/api/orders/history${pair ? `?pair=${encodeURIComponent(pair)}` : ''}`);
+    if (!rows.length) { el.innerHTML = '<div class="empty">No completed or cancelled orders yet</div>'; return; }
+    el.innerHTML = `<div class="table-wrap"><table><thead><tr><th>Date</th><th>Pair</th><th>Side</th><th>Type</th><th>Avg Fill</th><th>Amount</th><th>Status</th><th>Details</th></tr></thead><tbody>${rows.map(o => `
+      <tr><td>${new Date(o.updatedAt || o.createdAt).toLocaleString()}</td><td>${o.pair}</td>
+      <td style="text-transform:uppercase;color:${o.side === 'buy' ? '#4ade80' : '#fca5a5'}">${o.side}</td>
+      <td>${o.type}</td><td>${Number(o.avgFillPrice || o.price).toLocaleString(undefined,{maximumFractionDigits:8})}</td>
+      <td>${Number(o.filled || 0).toLocaleString(undefined,{maximumFractionDigits:8})} / ${Number(o.amount).toLocaleString(undefined,{maximumFractionDigits:8})}</td>
+      <td>${o.status}</td><td>${o.closeReason || (o.stopLoss || o.takeProfit ? `SL ${o.stopLoss || '—'} / TP ${o.takeProfit || '—'}` : '—')}</td></tr>`).join('')}</tbody></table></div>`;
+  } catch (e) { el.innerHTML = `<div class="empty">Could not load history: ${e.message}</div>`; }
+};
 
 async function loadBalances() {
   const b = await api('/api/wallet/balance');
@@ -73,16 +147,19 @@ function updateSubmitLabel() {
 }
 
 window.updateOrderTotal = function () {
-  const price = Number(document.getElementById('order-price').value) || 0;
+  const type = document.getElementById('order-type')?.value || 'limit';
+  const price = type === 'market' ? currentMarketPrice : (Number(document.getElementById('order-price').value) || 0);
   const amt = Number(document.getElementById('order-amount').value) || 0;
   const total = price * amt;
-  document.getElementById('order-total').textContent = `${total.toFixed(2)} USDT`;
+  document.getElementById('order-total').textContent = `${total.toFixed(2)} USDT${type === 'market' ? ' (estimate)' : ''}`;
 };
 
 async function refreshBook() {
   try {
     const data = await api(`/api/orders/book/${currentPair.replace('/', '-')}`);
+    currentMarketPrice = Number(data.mid) || 0;
     document.getElementById('pair-price').textContent = `$${data.mid.toLocaleString()}`;
+    updateOrderTotal();
 
     const fmt = (n, d = 4) => Number(n).toFixed(d);
 
@@ -193,14 +270,14 @@ window.placeOrder = async () => {
         takeProfit
       })
     });
-    toast('Order placed', 'success');
+    toast('Order submitted', 'success');
     document.getElementById('order-amount').value = '';
     document.getElementById('order-total').textContent = '0.00 USDT';
     const slEl = document.getElementById('order-sl');
     const tpEl = document.getElementById('order-tp');
     if (slEl) slEl.value = '';
     if (tpEl) tpEl.value = '';
-        await Promise.all([loadBalances(), loadMyOrders(), loadMyPositions()]);
+        await Promise.all([loadBalances(), loadMyOrders(), loadMyPositions(), loadTradingHistory()]);
   } catch (e) {
     toast(e.message, 'error');
   } finally {
@@ -224,6 +301,7 @@ window.updateOrderType = () => {
     priceField.placeholder = '0.00';
     if (priceLabel) priceLabel.textContent = 'Price (USDT)';
   }
+  updateOrderTotal();
 };
 
 window.cancelOrder = async (id) => {
@@ -238,7 +316,7 @@ window.confirmCancelOrder = async () => {
   try {
     await api(`/api/orders/${id}/cancel`, { method: 'POST' });
     toast('Order cancelled', 'success');
-        await Promise.all([loadBalances(), loadMyOrders(), loadMyPositions()]);
+        await Promise.all([loadBalances(), loadMyOrders(), loadMyPositions(), loadTradingHistory()]);
   } catch (e) { toast(e.message, 'error'); }
   window.__cancelOrderId = null;
 };
@@ -372,7 +450,7 @@ window.confirmClosePositionTrade = async (posId) => {
     await api(`/api/orders/positions/${posId}/close`, { method: 'POST' });
     closeModal('close-position-modal');
     toast('Position closed', 'success');
-    await Promise.all([loadBalances(), loadMyPositions()]);
+    await Promise.all([loadBalances(), loadMyPositions(), loadMyOrders(), loadTradingHistory()]);
   } catch (e) {
     toast(e.message, 'error');
   }
