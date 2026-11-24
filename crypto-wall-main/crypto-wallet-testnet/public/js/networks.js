@@ -1,7 +1,12 @@
 const user = requireAuth();
 if (user) {
   document.addEventListener('DOMContentLoaded', async () => {
-    const nets = await api('/api/networks');
+    const box = document.getElementById('nets');
+    box.innerHTML = skeletonCards(3);
+    let nets;
+    try { nets = await api('/api/networks'); }
+    catch (e) { box.innerHTML = emptyState('⚠️', 'Could not load networks', e.message || 'Please try again.'); return; }
+    if (!nets.length) { box.innerHTML = emptyState('🌐', 'No networks available', 'Please check back soon.'); return; }
 
     document.getElementById('nets').innerHTML = nets.map(n => `
       <div class="card">

@@ -1,20 +1,21 @@
 const express = require('express');
 const bcrypt = require('bcryptjs');
 const crypto = require('crypto');
+const jwt = require('jsonwebtoken');
 const User = require('../models/User');
 const { auth } = require('../middleware/auth');
 const router = express.Router();
 
 /* Update basic profile + KYC personal info */
 router.put('/update', auth, async (req, res) => {
-  const { displayName, country, twoFA, kycStatus, firstName, lastName, dateOfBirth } = req.body;
+  // twoFA and kycStatus are deliberately NOT accepted here: 2FA changes require a code (see /api/auth/2fa/*)
+  // and KYC status is set by the document upload flow and by admin review.
+  const { displayName, country, firstName, lastName, dateOfBirth } = req.body;
   const user = await User.findById(req.user._id);
   if (!user) return res.status(404).json({ error: 'User not found' });
 
   if (displayName !== undefined) user.displayName = displayName;
   if (country !== undefined)     user.country = country;
-  if (twoFA !== undefined)       user.twoFA = !!twoFA;
-  if (kycStatus !== undefined)   user.kycStatus = kycStatus;
 
   // KYC personal info
   if (firstName !== undefined) user.firstName = firstName;
@@ -38,18 +39,39 @@ router.put('/update', auth, async (req, res) => {
 });
 
 /* Change password */
+const signToken = (user) => jwt.sign(
+  { id: user._id, role: user.role, v: user.tokenVersion || 0 },
+  process.env.JWT_SECRET,
+  { expiresIn: process.env.JWT_EXPIRES }
+);
+
 router.put('/password', auth, async (req, res) => {
   const { current, next } = req.body;
   if (!current || !next) return res.status(400).json({ error: 'Both passwords required' });
-  if (next.length < 6) return res.status(400).json({ error: 'New password min 6 chars' });
+  if (String(next).length < 8) return res.status(400).json({ error: 'New password must be at least 8 characters' });
 
   const user = await User.findById(req.user._id);
   const ok = await bcrypt.compare(current, user.password);
-  if (!ok) return res.status(401).json({ error: 'Current password incorrect' });
+  if (!ok) return res.status(400).json({ error: 'Current password incorrect' });
 
   user.password = await bcrypt.hash(next, 10);
+  user.tokenVersion = (user.tokenVersion || 0) + 1; // signs out every other device
   await user.save();
-  res.json({ ok: true });
+  res.json({ ok: true, token: signToken(user) });
+});
+
+/* Recent sign-ins (most recent first) */
+router.get('/login-activity', auth, async (req, res) => {
+  const user = await User.findById(req.user._id).select('loginHistory');
+  res.json((user?.loginHistory || []).map(h => ({ ip: h.ip, userAgent: h.userAgent, at: h.at })));
+});
+
+/* Sign out of every device (this one stays signed in with a fresh token) */
+router.post('/logout-all', auth, async (req, res) => {
+  const user = await User.findById(req.user._id);
+  user.tokenVersion = (user.tokenVersion || 0) + 1;
+  await user.save();
+  res.json({ ok: true, token: signToken(user) });
 });
 
 /* ============================================================
@@ -81,7 +103,7 @@ router.post('/security-questions', auth, async (req, res) => {
 
     const user = await User.findById(req.user._id);
     const ok = await bcrypt.compare(password, user.password);
-    if (!ok) return res.status(401).json({ error: 'Incorrect password' });
+    if (!ok) return res.status(400).json({ error: 'Incorrect password' });
 
     // Validate each question
     for (const q of questions) {

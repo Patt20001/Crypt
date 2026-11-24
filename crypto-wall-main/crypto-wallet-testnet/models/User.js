@@ -147,6 +147,9 @@ const userSchema = new mongoose.Schema({
     at:        { type: Date, default: Date.now }
   }],
 
+  // Withdrawal whitelist: when on, withdrawals are only allowed to saved addresses that finished their cooling-off period
+  withdrawalWhitelistOnly: { type: Boolean, default: false },
+
   // ============================================================
   // Account status
   // ============================================================

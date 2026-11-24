@@ -1,0 +1,64 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Help & FAQ — NovaWallet</title>
+<meta name="description" content="Answers about accounts, deposits, withdrawals, swaps, staking and copy trading on NovaWallet." />
+<meta property="og:title" content="Help & FAQ — NovaWallet" />
+<meta property="og:description" content="Answers about accounts, deposits, withdrawals, swaps, staking and copy trading on NovaWallet." />
+<meta property="og:type" content="website" />
+<link rel="icon" href="/favicon.svg" type="image/svg+xml" />
+<meta name="theme-color" content="#060915" />
+<script src="/js/theme.js"></script>
+<link rel="stylesheet" href="/css/style.css" />
+</head>
+<body>
+  <div class="nav glass">
+    <a href="/" class="brand" style="text-decoration:none;color:inherit;"><div class="brand-logo">₮</div><span>Nova<span class="brand-accent">Wallet</span></span></a>
+    <div class="nav-links">
+      <a href="/" class="nav-link">Home</a>
+      <a href="/login.html" class="nav-link">Login</a>
+      <div class="theme-toggle" data-action="toggle-theme" title="Toggle theme">🌓</div>
+    </div>
+  </div>
+
+  <div class="container" style="max-width: 820px;">
+    <div class="card faq">
+      <h2>Help &amp; FAQ</h2>
+      <p class="tag" style="margin-bottom:20px;">Answers to common questions. Can&rsquo;t find what you need? <a href="/contact.html" style="color:var(--accent);">Contact support</a>.</p>
+      <div class="faq-group"><h3>Getting started</h3>
+        <details><summary>How do I create an account?</summary><p>Select <b>Get Started</b>, enter a username, email and password, accept the Terms and Risk Disclosure, and you can sign in straight away. If you have a referral code, enter it during sign-up.</p></details>
+        <details><summary>Do I have to verify my identity?</summary><p>Verification (KYC) is optional but raises your limits. Unverified accounts can withdraw up to 100 USDT per day, accounts with verification under review up to 500 USDT per day, and verified accounts have no daily withdrawal limit. You can submit your documents and selfie from your Profile page.</p></details>
+        <details><summary>How do I secure my account?</summary><p>Enable two-factor authentication from your Profile page (works with Google Authenticator, Authy and 1Password) and save your recovery codes. In Settings you can also turn on a withdrawal whitelist, review recent sign-ins and sign out of all devices.</p></details>
+      </div>
+      <div class="faq-group"><h3>Deposits and withdrawals</h3>
+        <details><summary>Which networks and assets are supported?</summary><p>USDT on Tron (TRC20), Ethereum (ERC20) and BNB Chain (BEP20), plus ETH on Ethereum and BNB on BNB Chain. See the <a href="/networks.html">Networks</a> page for current details.</p></details>
+        <details><summary>How long do deposits take?</summary><p>Deposits are credited after the required network confirmations: 19 on TRC20, 12 on ERC20 and 15 on BEP20. You can follow progress in your transaction list.</p></details>
+        <details><summary>What are the minimum amounts and fees?</summary><p>USDT withdrawals: TRC20 minimum 10, fee 1; ERC20 minimum 20, fee 8; BEP20 minimum 5, fee 0.5. ETH (ERC20): minimum 0.005, fee 0.003. BNB (BEP20): minimum 0.05, fee 0.001. Minimum deposits are shown on the Networks page.</p></details>
+        <details><summary>Why is my withdrawal pending?</summary><p>Withdrawals are reviewed before they are sent, so they appear as pending first. You will receive a notification when the status changes.</p></details>
+        <details><summary>I sent funds on the wrong network. Can I get them back?</summary><p>Blockchain transfers cannot be reversed, and funds sent to the wrong network or an unsupported asset may be unrecoverable. Contact support right away with the transaction details and we will check what is possible.</p></details>
+        <details><summary>What is the withdrawal whitelist?</summary><p>When turned on in Settings, withdrawals can only go to addresses you have saved. A newly saved address needs a 24-hour waiting period before it can be used, which protects your funds if someone gets into your account.</p></details>
+      </div>
+      <div class="faq-group"><h3>Trading, swaps and staking</h3>
+        <details><summary>How much does a swap cost?</summary><p>Swaps carry a 0.5% fee and use market reference prices. The rate, fee and amount you receive are shown before you confirm.</p></details>
+        <details><summary>What staking plans are available?</summary><p>Flexible at 4.5% APY, 30 days at 7.2%, 90 days at 10.5% and 180 days at 14.8%. Rewards accrue daily. Fixed-term plans are committed until they mature, and unstaking a locked plan early incurs a 5% penalty on the staked amount.</p></details>
+        <details><summary>How does the Trade page work?</summary><p>You can buy and sell supported assets against USDT, and manage open positions from your Portfolio page.</p></details>
+      </div>
+      <div class="faq-group"><h3>Copy trading</h3>
+        <details><summary>How does copy trading work?</summary><p>Choose a trader, allocate at least 10 USDT, and your allocation follows that trader&rsquo;s performance. You can stop at any time and your allocation plus profit or loss is returned to your wallet.</p></details>
+        <details><summary>What does it cost?</summary><p>Fees are charged on profits only: a performance fee set by the trader (paid to them) and a platform fee. They apply to profit above your previous high-water mark, so you are not charged twice on the same gains. Any fee outstanding when you stop copying is deducted from the amount returned.</p></details>
+        <details><summary>What is the risk score?</summary><p>A 1–10 indicator on each trader&rsquo;s profile based on volatility, drawdown and win rate. Lower means historically steadier results. It is not a guarantee of future performance.</p></details>
+      </div>
+      <div class="faq-group"><h3>Referrals and support</h3>
+        <details><summary>How do referrals work?</summary><p>Share your code from the Refer &amp; Earn page. When someone you invite signs up with it and completes their first qualifying deposit, your bonus is credited to your wallet.</p></details>
+        <details><summary>I forgot my password.</summary><p>Use <b>Forgot password?</b> on the sign-in page and answer your security questions. After a reset, all existing sessions are signed out.</p></details>
+        <details><summary>How do I contact support?</summary><p>Use the <a href="/contact.html">Contact support</a> page. Please never share your password or 2FA codes with anyone, including support.</p></details>
+      </div>
+    </div>
+  </div>
+
+  <script src="/js/ui.js"></script>
+  <script src="/js/footer.js"></script>
+</body>
+</html>

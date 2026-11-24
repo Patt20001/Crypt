@@ -435,7 +435,7 @@ function renderDocs(docs) {
 }
 
 window.removeDoc = async filename => {
-  if (!confirm('Remove this document?')) return;
+  if (!(await confirmAction({ title: 'Remove document', message: 'This document will be removed from your verification submission.', confirmText: 'Remove', danger: true }))) return;
 
   try {
     await api(`/api/upload/kyc/${filename}`, { method: 'DELETE' });
@@ -695,7 +695,7 @@ function renderSelfie(selfie) {
 }
 
 window.removeSelfie = async () => {
-  if (!confirm('Remove this selfie?')) return;
+  if (!(await confirmAction({ title: 'Remove selfie', message: 'Your selfie will be removed from your verification submission.', confirmText: 'Remove', danger: true }))) return;
 
   try {
     await api('/api/upload/selfie', { method: 'DELETE' });
@@ -750,10 +750,12 @@ window.changePwd = async () => {
   const next = document.getElementById('new-pwd').value;
 
   try {
-    await api('/api/profile/password', {
+    if (!next || next.length < 8) return toast('New password must be at least 8 characters', 'warn');
+    const res = await api('/api/profile/password', {
       method: 'PUT',
       body: JSON.stringify({ current, next })
     });
+    if (res?.token) localStorage.setItem('token', res.token); // other devices are signed out
 
     toast('Password updated', 'success');
 

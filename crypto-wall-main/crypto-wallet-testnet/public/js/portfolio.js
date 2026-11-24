@@ -1,7 +1,9 @@
 const user = requireAuth();
 if (user) document.addEventListener('DOMContentLoaded', load);
 
-async function load() {
+async function load(firstLoad = true) {
+  const hEl = document.getElementById('holdings'), pEl = document.getElementById('positions');
+  if (firstLoad) { if (hEl) hEl.innerHTML = skeletonCards(3); if (pEl) pEl.innerHTML = skeletonRows(3); }
   try {
     const p = await api('/api/portfolio');
     document.getElementById('total').textContent = '$' + p.total.toLocaleString(undefined, {
@@ -22,7 +24,7 @@ async function load() {
         </div>
         <div class="balance" style="font-size:22px;">$${h.usd.toLocaleString(undefined, { maximumFractionDigits: 2 })}</div>
         <div class="tag" style="margin-top:6px;">${h.amount.toFixed(h.symbol === 'USDT' ? 2 : 6)} ${h.symbol} @ $${h.price.toLocaleString()}</div>
-      </div>`).join('') || '<div class="empty">No holdings</div>';
+      </div>`).join('') || emptyState('💼', 'No holdings yet', 'Deposit funds to start building your portfolio.', { label: 'Make a deposit', href: '/wallet.html' });
 
     if (pnl.positions && pnl.positions.length) {
       document.getElementById('positions').innerHTML = `
@@ -56,11 +58,13 @@ async function load() {
           </tbody>
         </table></div>`;
     } else {
-      document.getElementById('positions').innerHTML = '<div class="empty">No open positions yet</div>';
+      document.getElementById('positions').innerHTML = emptyState('📈', 'No open positions', 'Open a trade to see your positions and PnL here.', { label: 'Go to Trade', href: '/orders.html' });
     }
 
     drawChart(p.history);
   } catch (e) {
+    if (hEl && firstLoad) hEl.innerHTML = emptyState('⚠️', 'Could not load your portfolio', e.message || 'Please try again.');
+    if (pEl && firstLoad) pEl.innerHTML = '';
     toast(e.message, 'error');
   }
 }
@@ -76,53 +80,18 @@ window.openClosePosition = async (posId) => {
     const positions = await api('/api/orders/positions');
     const pos = positions.find(p => p._id === posId || p.pair === posId);
     if (!pos) return toast('Position not found', 'error');
-
     const portfolio = await api('/api/portfolio');
     const row = portfolio.pnl?.positions?.find(p => p.pair === pos.pair) || {};
-
-    document.getElementById('close-pos-body').innerHTML = `
-      <div style="padding: 14px; background: rgba(148,163,184,.06); border-radius: 10px; margin-bottom: 16px;">
-        <div style="display:flex; justify-content:space-between; margin-bottom: 6px;">
-          <span class="tag">Pair</span>
-          <b>${pos.pair}</b>
-        </div>
-        <div style="display:flex; justify-content:space-between; margin-bottom: 6px;">
-          <span class="tag">Amount</span>
-          <b>${pos.amount.toFixed(6)} ${pos.base}</b>
-        </div>
-        <div style="display:flex; justify-content:space-between; margin-bottom: 6px;">
-          <span class="tag">Avg cost</span>
-          <b>$${pos.avgCost.toFixed(2)}</b>
-        </div>
-        <div style="display:flex; justify-content:space-between;">
-          <span class="tag">Current value</span>
-          <b>$${(row.marketValue || 0).toFixed(2)}</b>
-        </div>
-      </div>
-      <p class="tag" style="margin-bottom: 14px;">
-        The entire position will be sold at market price. Realized PnL:
-        <b style="color: ${row.unrealized >= 0 ? 'var(--accent)' : '#fca5a5'};">
-          ${formatMoney(row.unrealized || 0)}
-        </b>
-      </p>
-      <div style="display:flex; gap:10px;">
-        <button class="secondary" style="flex:1;" onclick="closeModal('close-position-modal')">Cancel</button>
-        <button class="danger" style="flex:1;" onclick="confirmClosePosition('${pos._id}')">Close Position</button>
-      </div>
-    `;
-    openModal('close-position-modal');
-  } catch (e) {
-    toast(e.message, 'error');
-  }
-};
-
-window.confirmClosePosition = async (posId) => {
-  try {
-    await api(`/api/orders/positions/${posId}/close`, { method: 'POST' });
-    closeModal('close-position-modal');
+    const ok = await confirmAction({
+      title: 'Close position',
+      message: 'The entire position will be sold at the current market price.',
+      details: [['Pair', pos.pair], ['Amount', `${pos.amount.toFixed(6)} ${pos.base}`], ['Average cost', `$${pos.avgCost.toFixed(2)}`], ['Current value', `$${(row.marketValue || 0).toFixed(2)}`], ['Estimated PnL', formatMoney(row.unrealized || 0)]],
+      confirmText: 'Close position', danger: true
+    });
+    if (!ok) return;
+    await api(`/api/orders/positions/${pos._id}/close`, { method: 'POST' });
     toast('Position closed', 'success');
-    // Reload both portfolio and positions data
-    setTimeout(() => load(), 400);
+    setTimeout(() => load(false), 400);
   } catch (e) { toast(e.message, 'error'); }
 };
 

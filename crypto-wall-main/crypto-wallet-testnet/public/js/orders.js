@@ -105,14 +105,14 @@ window.loadTradingHistory = async function () {
   try {
     const pair = document.getElementById('history-pair-filter')?.value || '';
     const rows = await api(`/api/orders/history${pair ? `?pair=${encodeURIComponent(pair)}` : ''}`);
-    if (!rows.length) { el.innerHTML = '<div class="empty">No completed or cancelled orders yet</div>'; return; }
+    if (!rows.length) { el.innerHTML = emptyState('🧾', 'No order history yet', 'Completed and cancelled orders will appear here.'); return; }
     el.innerHTML = `<div class="table-wrap"><table><thead><tr><th>Date</th><th>Pair</th><th>Side</th><th>Type</th><th>Avg Fill</th><th>Amount</th><th>Status</th><th>Details</th></tr></thead><tbody>${rows.map(o => `
       <tr><td>${new Date(o.updatedAt || o.createdAt).toLocaleString()}</td><td>${o.pair}</td>
       <td style="text-transform:uppercase;color:${o.side === 'buy' ? '#4ade80' : '#fca5a5'}">${o.side}</td>
       <td>${o.type}</td><td>${Number(o.avgFillPrice || o.price).toLocaleString(undefined,{maximumFractionDigits:8})}</td>
       <td>${Number(o.filled || 0).toLocaleString(undefined,{maximumFractionDigits:8})} / ${Number(o.amount).toLocaleString(undefined,{maximumFractionDigits:8})}</td>
       <td>${o.status}</td><td>${o.closeReason || (o.stopLoss || o.takeProfit ? `SL ${o.stopLoss || '—'} / TP ${o.takeProfit || '—'}` : '—')}</td></tr>`).join('')}</tbody></table></div>`;
-  } catch (e) { el.innerHTML = `<div class="empty">Could not load history: ${e.message}</div>`; }
+  } catch (e) { el.innerHTML = emptyState('⚠️', 'Could not load order history', e.message || 'Please try again.'); }
 };
 
 async function loadBalances() {
@@ -210,7 +210,7 @@ async function loadMyOrders() {
   try {
     const orders = await api('/api/orders/my');
     if (!orders.length) {
-      el.innerHTML = '<div class="empty">No orders yet</div>';
+      el.innerHTML = emptyState('📝', 'No open orders', 'Orders you place will appear here until they are filled or cancelled.');
       return;
     }
     el.innerHTML = `
@@ -253,6 +253,22 @@ window.placeOrder = async () => {
   }
 
   const btn = document.getElementById('btn-submit');
+  if (btn.disabled) return;
+  const base = (currentPair || '').split('/')[0];
+  const details = [
+    ['Side', currentSide === 'buy' ? 'Buy' : 'Sell'], ['Pair', currentPair],
+    ['Type', type === 'market' ? 'Market' : 'Limit'], ['Amount', `${amount} ${base}`],
+    ['Price', type === 'market' ? 'Market price' : `${price} USDT`]
+  ];
+  if (type !== 'market') details.push(['Estimated total', `${(price * amount).toFixed(2)} USDT`]);
+  if (stopLoss) details.push(['Stop-loss', `${stopLoss} USDT`]);
+  if (takeProfit) details.push(['Take-profit', `${takeProfit} USDT`]);
+  const ok = await confirmAction({
+    title: `Confirm ${currentSide === 'buy' ? 'buy' : 'sell'} order`,
+    message: type === 'market' ? 'Market orders fill at the best available price, which may differ from the price shown.' : '',
+    details, confirmText: currentSide === 'buy' ? 'Place buy order' : 'Place sell order', danger: currentSide === 'sell'
+  });
+  if (!ok) return;
   const label = btn.textContent;
   btn.disabled = true;
   btn.textContent = 'Placing…';
@@ -305,20 +321,16 @@ window.updateOrderType = () => {
 };
 
 window.cancelOrder = async (id) => {
-  openModal('cancel-order-modal');
-  window.__cancelOrderId = id;
-};
-
-window.confirmCancelOrder = async () => {
-  const id = window.__cancelOrderId;
-  if (!id) return;
-  closeModal('cancel-order-modal');
+  const ok = await confirmAction({
+    title: 'Cancel order', message: 'This order will be cancelled and any reserved funds will be released.',
+    confirmText: 'Cancel order', cancelText: 'Keep order', danger: true
+  });
+  if (!ok) return;
   try {
     await api(`/api/orders/${id}/cancel`, { method: 'POST' });
     toast('Order cancelled', 'success');
-        await Promise.all([loadBalances(), loadMyOrders(), loadMyPositions(), loadTradingHistory()]);
+    await Promise.all([loadBalances(), loadMyOrders(), loadMyPositions(), loadTradingHistory()]);
   } catch (e) { toast(e.message, 'error'); }
-  window.__cancelOrderId = null;
 };
 
 /* ============================================================
@@ -337,7 +349,7 @@ async function loadMyPositions() {
     ]);
 
     if (!positions.length) {
-      el.innerHTML = '<div class="empty">No open positions. Place a buy order to open one.</div>';
+      el.innerHTML = emptyState('📈', 'No open positions', 'Place a buy order to open your first position.');
       return;
     }
 
@@ -393,7 +405,7 @@ async function loadMyPositions() {
         </tbody>
       </table></div>`;
   } catch (e) {
-    el.innerHTML = `<div class="empty">Failed to load positions: ${e.message}</div>`;
+    el.innerHTML = emptyState('⚠️', 'Could not load positions', e.message || 'Please try again.');
   }
 }
 
@@ -402,58 +414,20 @@ window.openClosePositionTrade = async (posId, pair) => {
     const positions = await api('/api/orders/positions');
     const pos = positions.find(p => p._id === posId);
     if (!pos) return toast('Position not found', 'error');
-
     const portfolio = await api('/api/portfolio');
     const row = portfolio.pnl?.positions?.find(p => p.pair === pair) || {};
-
-    document.getElementById('close-pos-body').innerHTML = `
-      <div style="padding: 14px; background: rgba(148,163,184,.06); border-radius: 10px; margin-bottom: 16px;">
-        <div style="display:flex; justify-content:space-between; margin-bottom: 6px;">
-          <span class="tag">Pair</span>
-          <b>${pos.pair}</b>
-        </div>
-        <div style="display:flex; justify-content:space-between; margin-bottom: 6px;">
-          <span class="tag">Amount</span>
-          <b>${pos.amount.toFixed(6)} ${pos.base}</b>
-        </div>
-        <div style="display:flex; justify-content:space-between; margin-bottom: 6px;">
-          <span class="tag">Avg cost</span>
-          <b>$${pos.avgCost.toFixed(2)}</b>
-        </div>
-        <div style="display:flex; justify-content:space-between; margin-bottom: 6px;">
-          <span class="tag">Current price</span>
-          <b>$${(row.currentPrice || pos.avgCost).toFixed(2)}</b>
-        </div>
-        <div style="display:flex; justify-content:space-between;">
-          <span class="tag">Unrealized PnL</span>
-          <b style="color: ${(row.unrealized || 0) >= 0 ? 'var(--accent)' : '#fca5a5'};">
-            ${(row.unrealized || 0) >= 0 ? '+' : ''}${(row.unrealized || 0).toFixed(2)} USDT
-          </b>
-        </div>
-      </div>
-      <p class="tag" style="margin-bottom: 14px;">
-        The entire position will be sold at market price. Realized PnL will be added to your balance.
-      </p>
-      <div style="display:flex; gap:10px;">
-        <button class="secondary" style="flex:1;" onclick="closeModal('close-position-modal')">Cancel</button>
-        <button class="danger" style="flex:1;" onclick="confirmClosePositionTrade('${pos._id}')">Close Position</button>
-      </div>
-    `;
-    openModal('close-position-modal');
-  } catch (e) {
-    toast(e.message, 'error');
-  }
-};
-
-window.confirmClosePositionTrade = async (posId) => {
-  try {
+    const pnl = Number(row.unrealized || 0);
+    const ok = await confirmAction({
+      title: 'Close position',
+      message: 'The entire position will be sold at the current market price and the proceeds added to your balance.',
+      details: [['Pair', pos.pair], ['Amount', `${pos.amount.toFixed(6)} ${pos.base}`], ['Average cost', `$${pos.avgCost.toFixed(2)}`], ['Current price', `$${(row.currentPrice || pos.avgCost).toFixed(2)}`], ['Unrealized PnL', `${pnl >= 0 ? '+' : ''}${pnl.toFixed(2)} USDT`]],
+      confirmText: 'Close position', danger: true
+    });
+    if (!ok) return;
     await api(`/api/orders/positions/${posId}/close`, { method: 'POST' });
-    closeModal('close-position-modal');
     toast('Position closed', 'success');
     await Promise.all([loadBalances(), loadMyPositions(), loadMyOrders(), loadTradingHistory()]);
-  } catch (e) {
-    toast(e.message, 'error');
-  }
+  } catch (e) { toast(e.message, 'error'); }
 };
 
 // Close modal on backdrop click

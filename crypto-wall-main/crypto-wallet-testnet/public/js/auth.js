@@ -31,6 +31,10 @@ async function register() {
     return showMsg('Please fill in all required fields');
   }
 
+  if (password.length < 8) {
+    return showMsg('Password must be at least 8 characters');
+  }
+
   if (!acceptTerms) {
     return showMsg('You must accept the Terms & Risk Disclosure');
   }
@@ -403,7 +407,7 @@ window.forgotVerify = async () => {
         </p>
 
         <label>New password</label>
-        <input id="fp-newpwd" type="password" placeholder="Min 6 characters" />
+        <input id="fp-newpwd" type="password" placeholder="At least 8 characters" autocomplete="new-password" data-strength />
 
         <label>Confirm new password</label>
         <input id="fp-confirm" type="password" placeholder="Type again" />
@@ -429,10 +433,10 @@ window.forgotReset = async () => {
   const confirm = document.getElementById('fp-confirm')?.value;
   const msg = document.getElementById('fp-msg3');
 
-  if (!pwd || pwd.length < 6) {
+  if (!pwd || pwd.length < 8) {
     if (msg) {
       msg.className = 'error';
-      msg.textContent = 'Password min 6 chars';
+      msg.textContent = 'Password must be at least 8 characters';
     }
     return;
   }

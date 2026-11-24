@@ -1,3 +1,4 @@
+const mongoose = require('mongoose');
 const User = require('../models/User');
 const Transaction = require('../models/Transaction');
 const { notify } = require('./notify');
@@ -145,7 +146,7 @@ async function trackConfirmations(txId, txHash, network) {
 
     try {
       const tx = await Transaction.findById(txId);
-      if (!tx || tx.status === 'completed') { clearInterval(interval); return; }
+      if (!tx || tx.status !== 'pending') { clearInterval(interval); return; }
 
       let confirmations = 0;
 
@@ -174,21 +175,33 @@ async function trackConfirmations(txId, txHash, network) {
         }
       }
 
-      tx.confirmations = confirmations;
-      await tx.save();
-
       if (confirmations >= required) {
-        const user = await User.findById(tx.user);
-        user.balances[tx.currency] = (user.balances[tx.currency] || 0) + tx.amount;
-        await user.save();
-
-        tx.status = 'completed';
-        await tx.save();
-
-        await notify(user._id, 'deposit', 'Deposit confirmed',
-          `${tx.amount} ${tx.currency} credited to your wallet`);
-        console.log(`✅ Credited ${tx.amount} ${tx.currency} to ${user.username}`);
+        const session = await mongoose.startSession();
+        let creditedUser = null; let creditedAmount = 0; let creditedCurrency = tx.currency;
+        try {
+          await session.withTransaction(async () => {
+            // Only the process that changes pending -> completed is allowed to credit the wallet.
+            const claimed = await Transaction.findOneAndUpdate(
+              { _id: txId, status: 'pending' },
+              { $set: { confirmations, status: 'completed', updatedAt: new Date() } },
+              { new: true, session }
+            );
+            if (!claimed) return;
+            const user = await User.findById(claimed.user).session(session);
+            if (!user) throw new Error('Deposit owner not found');
+            user.set(`balances.${claimed.currency}`, Number(user.balances?.[claimed.currency] || 0) + claimed.amount);
+            await user.save({ session });
+            creditedUser = { id: user._id, username: user.username };
+            creditedAmount = claimed.amount; creditedCurrency = claimed.currency;
+          });
+        } finally { await session.endSession(); }
+        if (creditedUser) {
+          await notify(creditedUser.id, 'deposit', 'Deposit confirmed', `${creditedAmount} ${creditedCurrency} credited to your wallet`);
+          console.log(`✅ Credited ${creditedAmount} ${creditedCurrency} to ${creditedUser.username}`);
+        }
         clearInterval(interval);
+      } else {
+        await Transaction.updateOne({ _id: txId, status: 'pending' }, { $set: { confirmations, updatedAt: new Date() } });
       }
     } catch (e) {
       logOnce(network, `confirm: ${e.message}`);

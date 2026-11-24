@@ -29,6 +29,7 @@ animateNumber(document.getElementById('bnb'),  bal.balances.BNB  || 0, 4);
     // ---- Transactions ----
     const txs = await api('/api/wallet/transactions');
     renderTxs(txs);
+    renderOnboarding(me, txs);
 
     // ---- Broadcast banner ----
     try {
@@ -39,13 +40,48 @@ animateNumber(document.getElementById('bnb'),  bal.balances.BNB  || 0, 4);
       }
     } catch {}
   } catch (e) {
+    const t = document.getElementById('txs');
+    if (t) t.innerHTML = emptyState('⚠️', 'Could not load your activity', e.message || 'Please try again.');
     toast(e.message, 'error');
   }
 }
 
+/* ---------------- GET STARTED PROMPTS ---------------- */
+function renderOnboarding(me, txs) {
+  const slot = document.getElementById('onboarding');
+  if (!slot) return;
+  const key = `onboardingHidden:${me._id || me.id || user.id}`;
+  const kycDone = me.kycStatus === 'verified' || me.kycStatus === 'pending';
+  const depositDone = txs.some(t => t.type === 'deposit' && t.status === 'completed');
+  const depositPending = !depositDone && txs.some(t => t.type === 'deposit' && t.status === 'pending');
+  const steps = [
+    { done: kycDone, icon: '🛡️', title: 'Verify your identity', sub: me.kycStatus === 'pending' ? 'Your documents are under review.' : me.kycStatus === 'verified' ? 'Verified. No daily withdrawal limit.' : 'Raise your daily withdrawal limit from 100 USDT.', href: '/profile.html', cta: 'Verify now' },
+    { done: !!me.twoFA, icon: '🔐', title: 'Enable two-factor authentication', sub: me.twoFA ? 'Your account is protected.' : 'Protect sign-in and withdrawals with an authenticator app.', href: '/profile.html', cta: 'Enable 2FA' },
+    { done: depositDone, icon: '💰', title: 'Make your first deposit', sub: depositDone ? 'Funds received.' : depositPending ? 'Your deposit is awaiting network confirmations.' : 'Add USDT to start trading, swapping and staking.', href: '/wallet.html', cta: depositPending ? 'View status' : 'Deposit' }
+  ];
+  const done = steps.filter(s => s.done).length;
+  if (done === steps.length || localStorage.getItem(key)) { slot.innerHTML = ''; return; }
+  slot.innerHTML = `
+    <div class="card onboard">
+      <div class="onboard-head">
+        <div><h3 style="margin:0;">Get started</h3><div class="tag">${done} of ${steps.length} steps complete</div></div>
+        <button class="secondary sm" onclick="hideOnboarding('${key}')" aria-label="Hide">Hide</button>
+      </div>
+      <div class="onboard-progress"><div style="width:${Math.round(done / steps.length * 100)}%"></div></div>
+      ${steps.map(s => `
+        <div class="onboard-step ${s.done ? 'done' : ''}">
+          <div class="ob-icon">${s.done ? '✓' : s.icon}</div>
+          <div class="ob-text"><b>${s.title}</b><span class="tag">${s.sub}</span></div>
+          ${s.done ? '' : `<a class="btn sm" href="${s.href}">${s.cta}</a>`}
+        </div>`).join('')}
+    </div>`;
+}
+window.hideOnboarding = key => { localStorage.setItem(key, '1'); document.getElementById('onboarding').innerHTML = ''; };
+
 function renderTxs(txs) {
   const el = document.getElementById('txs');
   if (!txs.length) {
+    el.innerHTML = emptyState('🧾', 'No activity yet', 'Your deposits, withdrawals and trades will appear here.', { label: 'Make a deposit', href: '/wallet.html' });
     return;
   }
   el.innerHTML = `

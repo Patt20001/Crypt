@@ -4,7 +4,8 @@ module.exports = async (req, res, next) => {
   // Allow admin actions, auth, and static files to pass
   if (req.path.startsWith('/api/admin') ||
       req.path.startsWith('/api/auth') ||
-      req.path.startsWith('/api/settings')) return next();
+      req.path.startsWith('/api/settings') ||
+      req.path.startsWith('/api/support')) return next();
 
   try {
     const s = await Settings.findOne({ key: 'maintenance' });

@@ -8,6 +8,9 @@
 <link rel="stylesheet" href="/css/style.css" />
 <script src="https://cdn.jsdelivr.net/npm/qrcodejs@1.0.0/qrcode.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/jsqr@1.4.0/dist/jsQR.js"></script>
+<link rel="icon" href="/favicon.svg" type="image/svg+xml" />
+<meta name="theme-color" content="#060915" />
+<meta name="robots" content="noindex" />
 </head>
 <body>
   <div class="nav glass">
@@ -34,6 +37,11 @@
       ⚠️ <b>Live on-chain mode.</b> Deposits are detected automatically — send only supported assets on supported networks. Wrong network = permanent loss.
     </div>
 
+    <div class="grid grid-3" id="wallet-overview" style="margin-bottom:16px;">
+      <div class="card"><div class="tag">Available · selected asset</div><div class="balance" id="wallet-total-available">—</div></div>
+      <div class="card"><div class="tag">Locked · selected asset</div><div class="balance" id="wallet-total-locked">—</div></div>
+      <div class="card"><div class="tag">Assets held</div><div class="balance" id="wallet-asset-count">—</div></div>
+    </div>
     <div id="limits-banner"></div>
 
     <!-- ================= ASSET SELECTOR ================= -->
@@ -102,7 +110,7 @@
       <!-- ================= WITHDRAW ================= -->
       <div class="card">
         <h3>Withdraw <span id="wd-currency-label">USDT</span></h3>
-        <p class="tag" style="margin-bottom: 16px;">Withdrawals are reviewed and processed within minutes.</p>
+        <p class="tag" style="margin-bottom: 16px;">Withdrawals are reviewed before they are processed.</p>
 
         <label>Destination address</label>
         <div style="display:flex; gap:8px; align-items:flex-start; margin-bottom: 12px;">
@@ -113,6 +121,7 @@
           <button type="button" class="secondary sm" onclick="openQrScanner()" title="Scan QR" style="padding: 10px 12px;">📷</button>
         </div>
         <button class="secondary sm" onclick="saveAddress()" style="margin-bottom:14px;">+ Save this address</button>
+        <div id="whitelist-hint" class="tag" style="margin:-6px 0 14px;"></div>
 
         <label>Amount (<span id="wd-sym">USDT</span>)</label>
         <input id="w-amt" type="number" placeholder="50" />
@@ -160,5 +169,6 @@
   <script src="/js/qr-scan.js"></script>
   <script src="/js/prices.js"></script>
   <script src="/js/wallet.js"></script>
+<script src="/js/footer.js"></script>
 </body>
 </html>

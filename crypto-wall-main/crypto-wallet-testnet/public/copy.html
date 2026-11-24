@@ -6,6 +6,9 @@
 <title>Copy Trading — NovaWallet</title>
 <script src="/js/theme.js"></script>
 <link rel="stylesheet" href="/css/style.css" />
+<link rel="icon" href="/favicon.svg" type="image/svg+xml" />
+<meta name="theme-color" content="#060915" />
+<meta name="robots" content="noindex" />
 </head>
 <body>
   <div class="nav glass">
@@ -25,7 +28,7 @@
 
   <div class="container">
     <h2>Copy Trading</h2>
-    <p class="tag" style="margin-bottom: 20px;">Follow top traders. Their positions mirror into your account automatically.</p>
+    <p class="tag" style="margin-bottom:20px;">Follow top traders and share in their performance. Performance and platform fees apply to profits.</p>
 
     <div class="card" style="background: linear-gradient(135deg, rgba(74,222,128,.08), rgba(34,211,238,.04)); border-color: rgba(74,222,128,.3);">
   <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom: 14px;">
@@ -40,43 +43,17 @@
       <div id="my-copies"></div>
     </div>
 
-    <div class="card" style="display:flex; gap:10px; flex-wrap:wrap; align-items:center; padding:14px 18px;">
-  <span class="tag" style="margin-right:6px;">Filter:</span>
-  <select id="filter-tier" style="width:auto; margin:0; padding:8px 12px;" onchange="applyFilters()">
-    <option value="">All tiers</option>
-    <option value="diamond">💎 Diamond</option>
-    <option value="gold">🥇 Gold</option>
-    <option value="silver">🥈 Silver</option>
-    <option value="bronze">🥉 Bronze</option>
-  </select>
-  <select id="sort-by" style="width:auto; margin:0; padding:8px 12px;" onchange="applyFilters()">
-    <option value="roi">Top ROI</option>
-    <option value="winRate">Highest win rate</option>
-    <option value="followers">Most followers</option>
-    <option value="totalTrades">Most active</option>
-  </select>
-  <span class="tag" id="traders-count" style="margin-left:auto;"></span>
-</div>
-
     <h3 style="margin: 24px 0 12px;">Featured Traders</h3>
-    <div class="card" style="display:flex; gap:10px; flex-wrap:wrap; align-items:center; padding:14px 18px;">
-  <input id="search-traders" type="text" placeholder="Search traders…"
-    style="flex:1; min-width:180px; margin:0;" oninput="applyFilters()" />
-  <select id="filter-tier" style="width:auto; margin:0; padding:8px 12px;" onchange="applyFilters()">
-    <option value="">All tiers</option>
-    <option value="diamond">💎 Diamond</option>
-    <option value="gold">🥇 Gold</option>
-    <option value="silver">🥈 Silver</option>
-    <option value="bronze">🥉 Bronze</option>
-  </select>
-  <select id="sort-by" style="width:auto; margin:0; padding:8px 12px;" onchange="applyFilters()">
-    <option value="roi">Top ROI</option>
-    <option value="winRate">Win rate</option>
-    <option value="followers">Followers</option>
-    <option value="totalTrades">Active</option>
-  </select>
-  <span class="tag" id="traders-count" style="margin-left:auto;"></span>
-</div>
+    <div class="card copy-filters" style="display:flex; gap:10px; flex-wrap:wrap; align-items:center; padding:14px 18px;">
+      <input id="search-traders" type="text" placeholder="Search traders…" style="flex:1; min-width:180px; margin:0;" oninput="applyFilters()" />
+      <select id="filter-tier" style="width:auto; margin:0; padding:8px 12px;" onchange="applyFilters()">
+        <option value="">All tiers</option><option value="diamond">💎 Diamond</option><option value="gold">🥇 Gold</option><option value="silver">🥈 Silver</option><option value="bronze">🥉 Bronze</option>
+      </select>
+      <select id="sort-by" style="width:auto; margin:0; padding:8px 12px;" onchange="applyFilters()">
+        <option value="roi">Top ROI</option><option value="winRate">Highest win rate</option><option value="followers">Most followers</option><option value="totalTrades">Most active</option>
+      </select>
+      <span class="tag" id="traders-count" style="margin-left:auto;"></span>
+    </div>
     <div class="grid grid-2" id="traders"></div>
     <div id="pagination"></div>
   </div>
@@ -91,9 +68,17 @@
     </div>
   </div>
 
+  <div class="modal" id="trader-profile-modal">
+    <div class="modal-inner glass copy-profile-modal">
+      <div class="modal-head"><h3 id="trader-profile-title">Trader profile</h3><button class="modal-close" onclick="closeModal('trader-profile-modal')">×</button></div>
+      <div id="trader-profile-body"><div class="skeleton skeleton-card"></div></div>
+    </div>
+  </div>
+
   <script src="/js/ui.js"></script>
   <script src="/js/auth.js"></script>
   <script src="/js/notifications.js"></script>
   <script src="/js/copy.js"></script>
+<script src="/js/footer.js"></script>
 </body>
 </html>

@@ -6,6 +6,12 @@
 <title>Login — NovaWallet</title>
 <script src="/js/theme.js"></script>
 <link rel="stylesheet" href="/css/style.css" />
+<link rel="icon" href="/favicon.svg" type="image/svg+xml" />
+<meta name="theme-color" content="#060915" />
+<meta name="description" content="Sign in to your NovaWallet account." />
+<meta property="og:title" content="Login — NovaWallet" />
+<meta property="og:description" content="Sign in to your NovaWallet account." />
+<meta property="og:type" content="website" />
 </head>
 <body>
   <div class="center">
@@ -23,7 +29,7 @@
       <input id="email" type="email" placeholder="you@example.com" />
 
       <label>Password</label>
-      <input id="password" type="password" placeholder="••••••••" />
+      <input id="password" type="password" placeholder="••••••••" autocomplete="current-password" />
 
      <div id="twofa-wrap" style="display:none; margin-bottom: 12px;">
   <label>2FA code from authenticator app</label>
@@ -58,5 +64,6 @@
   <script src="/js/ui.js"></script>
   <script src="/js/theme.js"></script>
   <script src="/js/auth.js"></script>
+<script src="/js/footer.js"></script>
 </body>
 </html>

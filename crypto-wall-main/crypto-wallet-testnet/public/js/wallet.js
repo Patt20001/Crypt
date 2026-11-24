@@ -2,6 +2,7 @@ const user = requireAuth();
 
 let networks = [];           // full list from /api/networks
 let balances = {};
+let lockedBalances = {};
 let depositAddresses = {};
 let selectedAsset = 'USDT';
 let selectedNetwork = null;
@@ -25,6 +26,16 @@ async function init() {
 
   const amtInput = document.getElementById('w-amt');
   if (amtInput) amtInput.addEventListener('input', updateFeeLine);
+}
+
+function renderWalletOverview() {
+  const availableEl = document.getElementById('wallet-total-available');
+  const lockedEl = document.getElementById('wallet-total-locked');
+  const countEl = document.getElementById('wallet-asset-count');
+  const decimals = selectedAsset === 'USDT' ? 2 : 6;
+  if (availableEl) availableEl.textContent = `${Number(balances[selectedAsset] || 0).toFixed(decimals)} ${selectedAsset}`;
+  if (lockedEl) lockedEl.textContent = `${Number(lockedBalances[selectedAsset] || 0).toFixed(decimals)} ${selectedAsset}`;
+  if (countEl) countEl.textContent = Object.values(balances).filter(v => Number(v) > 0).length;
 }
 
 /* ============================================================
@@ -74,6 +85,7 @@ function renderNetworkSelector() {
 function selectAsset(sym) {
   selectedAsset = sym;
   renderAssetSelector();
+  renderWalletOverview();
 
   // Pick first network that supports this asset
   const valid = networks.filter(n => n.currencies.some(c => c.symbol === sym));
@@ -117,7 +129,7 @@ function renderAssetDetail() {
   // QR
   const qrEl = document.getElementById('qr');
   qrEl.innerHTML = '';
-  const payload = `${selectedAsset}:${net.id}:${addr}`;
+  const payload = addr;
   if (window.QRCode) {
     try {
       new QRCode(qrEl, {
@@ -160,6 +172,8 @@ async function loadBalance() {
     const b = await api('/api/wallet/balance');
     balances = b.balances || {};
     depositAddresses = b.depositAddresses || {};
+    lockedBalances = b.locked || {};
+    renderWalletOverview();
     renderAssetSelector();
     if (selectedNetwork) renderAssetDetail();
   } catch (e) { console.warn('loadBalance:', e.message); }
@@ -196,13 +210,22 @@ async function loadLimits() {
 /* ============================================================
    ADDRESS BOOK
    ============================================================ */
+let whitelistState = { enabled: false, addresses: [] };
 async function loadAddressBook() {
   try {
-    const list = await api('/api/addresses');
+    const [list, wl] = await Promise.all([api('/api/addresses'), api('/api/wallet/whitelist').catch(() => ({ enabled: false, addresses: [] }))]);
+    whitelistState = wl;
     const sel = document.getElementById('addr-book');
     if (!sel) return;
-    sel.innerHTML = '<option value="">Address book</option>' +
-      list.map(a => `<option value="${a.address}">${a.label} · ${a.network}</option>`).join('');
+    const saved = wl.enabled ? [] : list;
+    const whitelisted = (wl.addresses || []).filter(a => a.active);
+    sel.innerHTML = '<option value="">' + (wl.enabled ? 'Whitelisted addresses' : 'Address book') + '</option>' +
+      saved.map(a => `<option value="${escHtml(a.address)}">${escHtml(a.label)} · ${escHtml(a.network)}</option>`).join('') +
+      whitelisted.map(a => `<option value="${escHtml(a.address)}">${escHtml(a.label || 'Whitelisted')} · ${escHtml(a.network)} ✓</option>`).join('');
+    const hint = document.getElementById('whitelist-hint');
+    if (hint) hint.innerHTML = wl.enabled
+      ? '🔒 Whitelist is on: withdrawals can only go to saved addresses. <a href="/settings.html" style="color:var(--accent);">Manage in Settings</a>'
+      : '';
   } catch {}
 }
 
@@ -216,7 +239,7 @@ window.pickAddress = (addr) => {
 window.saveAddress = async () => {
   const address = document.getElementById('w-addr').value.trim();
   if (!address) return toast('Enter an address first', 'warn');
-  const label = prompt('Label for this address', 'My wallet');
+  const label = await confirmAction({ title: 'Save address', message: 'Give this address a name so you can find it later.', input: { label: 'Label', placeholder: 'e.g. My Binance wallet', maxlength: 40 }, confirmText: 'Save address' });
   if (!label) return;
   try {
     await api('/api/addresses', {
@@ -294,33 +317,36 @@ window.withdraw = async () => {
   if (amount < c.minWithdraw)
     return toast(`Minimum withdrawal is ${c.minWithdraw} ${selectedAsset}`, 'warn');
 
+  if (btn?.disabled) return;
+  let me = null;
+  try { me = await api('/api/auth/me').then(r => r.user); } catch {}
+  const fee = Number(c.fee || 0);
+  const result = await confirmAction({
+    title: 'Confirm withdrawal',
+    message: 'Withdrawals are final once processed. Double-check the network and address.',
+    details: [['Amount', `${amount} ${selectedAsset}`], ['Network fee', `${fee} ${selectedAsset}`], ['You receive', `${Math.max(0, amount - fee).toFixed(c.decimals ?? 6)} ${selectedAsset}`], ['Network', selectedNetwork.id], ['To address', address]],
+    confirmText: 'Confirm withdrawal',
+    input: me?.twoFA ? { label: '2FA code from your authenticator app', placeholder: '6-digit code', maxlength: 12, inputmode: 'numeric' } : null
+  });
+  if (result === null || result === false) return;
+  const code = typeof result === 'string' ? result : undefined;
+
   if (btn) { btn.disabled = true; btn.textContent = 'Submitting…'; }
 
   try {
-    let code;
-    try {
-      const me = await api('/api/auth/me').then(r => r.user);
-      if (me.twoFA) {
-        code = prompt('Enter the current 6-digit code from your authenticator app');
-        if (!code) {
-          if (btn) { btn.disabled = false; btn.textContent = 'Request Withdrawal'; }
-          return;
-        }
-      }
-    } catch {}
-
     await api('/api/wallet/withdraw', {
       method: 'POST',
       body: JSON.stringify({
         amount,
         currency: selectedAsset,
+        network: selectedNetwork.id,
         address,
         code,
         note: `via ${selectedNetwork.id}`
       })
     });
 
-    toast('Withdrawal submitted — processing', 'success');
+    toast('Withdrawal requested. It is now pending review.', 'success');
     document.getElementById('w-amt').value = '';
     document.getElementById('w-addr').value = '';
     loadTxs();
@@ -342,7 +368,7 @@ async function loadTxs() {
   try {
     const txs = await api('/api/wallet/transactions');
     if (!txs.length) {
-      el.innerHTML = '<div class="empty">No transactions yet.</div>';
+      el.innerHTML = emptyState('🧾', 'No transactions yet', 'Deposits, withdrawals and other activity will appear here.');
       return;
     }
     el.innerHTML = `
@@ -354,7 +380,7 @@ async function loadTxs() {
           const isPendingDeposit = t.type === 'deposit' && t.status === 'pending';
           const amountCell = isPendingDeposit
             ? '<span class="tag">Awaiting confirmation</span>'
-            : `<span style="font-weight:600;">${t.amount}</span>`;
+            : `<span style="font-weight:600;">${t.amount}</span>${t.type === 'withdraw' && t.fee ? `<div class="tag">Fee: ${t.fee} · Net: ${t.netAmount} ${t.currency}</div>` : ''}`;
 
           return `
             <tr>
@@ -369,6 +395,6 @@ async function loadTxs() {
         }).join('')}
         </tbody></table></div>`;
   } catch (e) {
-    el.innerHTML = `<div class="empty">Could not load transactions: ${e.message}</div>`;
+    el.innerHTML = emptyState('⚠️', 'Could not load transactions', e.message || 'Please try again.');
   }
 }

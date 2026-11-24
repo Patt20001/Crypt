@@ -1,0 +1,71 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Service status — NovaWallet</title>
+<meta name="description" content="Live status of NovaWallet services." />
+<meta property="og:title" content="Service status — NovaWallet" />
+<meta property="og:description" content="Live status of NovaWallet services." />
+<meta property="og:type" content="website" />
+<link rel="icon" href="/favicon.svg" type="image/svg+xml" />
+<meta name="theme-color" content="#060915" />
+<script src="/js/theme.js"></script>
+<link rel="stylesheet" href="/css/style.css" />
+</head>
+<body>
+  <div class="nav glass">
+    <a href="/" class="brand" style="text-decoration:none;color:inherit;"><div class="brand-logo">₮</div><span>Nova<span class="brand-accent">Wallet</span></span></a>
+    <div class="nav-links">
+      <a href="/" class="nav-link">Home</a>
+      <a href="/login.html" class="nav-link">Login</a>
+      <div class="theme-toggle" data-action="toggle-theme" title="Toggle theme">🌓</div>
+    </div>
+  </div>
+
+  <div class="container" style="max-width: 720px;">
+    <div class="card">
+      <div style="display:flex;justify-content:space-between;align-items:center;gap:12px;">
+        <h2>Service status</h2><span class="tag" id="st-updated">Checking…</span>
+      </div>
+      <div id="st-banner" style="margin:16px 0;"></div>
+      <div id="st-rows"><div class="skeleton skeleton-row"></div><div class="skeleton skeleton-row"></div><div class="skeleton skeleton-row"></div><div class="skeleton skeleton-row"></div></div>
+    </div>
+  </div>
+
+  <script src="/js/ui.js"></script>
+  <script>
+    const pill = (cls, text) => `<span class="status-pill ${cls}">${text}</span>`;
+    async function checkStatus() {
+      const rows = []; let allOk = true; let maintenance = null;
+      try {
+        const r = await fetch('/api/status', { cache: 'no-store' });
+        if (!r.ok) throw new Error();
+        const d = await r.json();
+        rows.push(['Website &amp; API', pill('ok', 'Operational')]);
+        rows.push(['Accounts &amp; transactions', d.database === 'operational' ? pill('ok', 'Operational') : pill('bad', 'Degraded')]);
+        if (d.database !== 'operational') allOk = false;
+        if (d.maintenance?.active) { maintenance = d.maintenance.message || 'Scheduled maintenance is in progress.'; allOk = false; }
+        rows.push(['Scheduled maintenance', d.maintenance?.active ? pill('warn', 'In progress') : pill('ok', 'None')]);
+      } catch {
+        allOk = false;
+        rows.push(['Website &amp; API', pill('bad', 'Unreachable')]);
+      }
+      try {
+        const m = await fetch('/api/market/strip', { cache: 'no-store' });
+        const md = m.ok ? await m.json() : null;
+        rows.push(['Market data', md?.items?.length ? (md.stale ? pill('warn', 'Delayed') : pill('ok', 'Operational')) : pill('warn', 'Unavailable')]);
+        if (!md?.items?.length || md.stale) allOk = false;
+      } catch { rows.push(['Market data', pill('warn', 'Unavailable')]); allOk = false; }
+      document.getElementById('st-rows').innerHTML = rows.map(([n, p]) => `<div class="status-row"><span>${n}</span>${p}</div>`).join('');
+      document.getElementById('st-banner').innerHTML = maintenance
+        ? `<div class="broadcast" style="--broadcast-icon:none;">🛠 ${escHtml(maintenance)}</div>`
+        : allOk ? `<div class="broadcast" style="--broadcast-icon:none;">✅ All systems operational</div>`
+                : `<div class="broadcast" style="--broadcast-icon:none;">⚠️ Some services are degraded. We are working to restore them.</div>`;
+      document.getElementById('st-updated').textContent = 'Updated ' + new Date().toLocaleTimeString();
+    }
+    checkStatus(); setInterval(checkStatus, 30000);
+  </script>
+  <script src="/js/footer.js"></script>
+</body>
+</html>

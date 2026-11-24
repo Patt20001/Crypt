@@ -1,0 +1,75 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Contact support — NovaWallet</title>
+<meta name="description" content="Get help with your NovaWallet account." />
+<meta property="og:title" content="Contact support — NovaWallet" />
+<meta property="og:description" content="Get help with your NovaWallet account." />
+<meta property="og:type" content="website" />
+<link rel="icon" href="/favicon.svg" type="image/svg+xml" />
+<meta name="theme-color" content="#060915" />
+<script src="/js/theme.js"></script>
+<link rel="stylesheet" href="/css/style.css" />
+</head>
+<body>
+  <div class="nav glass">
+    <a href="/" class="brand" style="text-decoration:none;color:inherit;"><div class="brand-logo">₮</div><span>Nova<span class="brand-accent">Wallet</span></span></a>
+    <div class="nav-links">
+      <a href="/" class="nav-link">Home</a>
+      <a href="/login.html" class="nav-link">Login</a>
+      <div class="theme-toggle" data-action="toggle-theme" title="Toggle theme">🌓</div>
+    </div>
+  </div>
+
+  <div class="container" style="max-width: 720px;">
+    <div class="card">
+      <h2>Contact support</h2>
+      <p class="tag" style="margin-bottom:18px;">Describe your issue and our team will reply here and in your notifications. Check the <a href="/faq.html" style="color:var(--accent);">FAQ</a> for quick answers.</p>
+
+      <div id="contact-guest" style="display:none;">
+        <div class="empty empty-rich">
+          <div class="empty-icon">🔐</div>
+          <div class="empty-title">Sign in to contact support</div>
+          <div class="empty-sub">Support requests are linked to your account so we can help you securely.</div>
+          <a class="btn sm" href="/login.html">Sign in</a>
+        </div>
+        <p class="tag" style="text-align:center;margin-top:14px;">Locked out? Use <b>Forgot password?</b> on the sign-in page to recover access.</p>
+      </div>
+
+      <div id="contact-form" style="display:none;">
+        <label>Category</label>
+        <select id="c-category"><option value="account">Account</option><option value="deposit">Deposit</option><option value="withdrawal">Withdrawal</option><option value="trading">Trading</option><option value="technical">Technical issue</option><option value="other">Other</option></select>
+        <label>Subject</label>
+        <input id="c-subject" maxlength="160" placeholder="How can we help?" />
+        <label>Message</label>
+        <textarea id="c-message" rows="6" maxlength="5000" placeholder="Describe the issue and include relevant transaction references. Never share your password or 2FA codes."></textarea>
+        <button id="c-submit" style="width:100%;margin-top:6px;" onclick="sendContact()">Send message</button>
+        <p class="tag" style="margin-top:12px;">View and reply to your existing requests from your <a href="/profile.html" style="color:var(--accent);">Profile</a> page.</p>
+      </div>
+    </div>
+  </div>
+
+  <script src="/js/ui.js"></script>
+  <script src="/js/auth.js"></script>
+  <script>
+    const signedIn = !!localStorage.getItem('token');
+    document.getElementById(signedIn ? 'contact-form' : 'contact-guest').style.display = 'block';
+    window.sendContact = async () => {
+      const subject = document.getElementById('c-subject').value.trim();
+      const message = document.getElementById('c-message').value.trim();
+      if (subject.length < 4) return toast('Please enter a subject (at least 4 characters)', 'warn');
+      if (message.length < 10) return toast('Please describe your issue (at least 10 characters)', 'warn');
+      await withBusy(document.getElementById('c-submit'), 'Sending…', async () => {
+        try {
+          await api('/api/support', { method: 'POST', body: JSON.stringify({ category: document.getElementById('c-category').value, subject, message }) });
+          document.getElementById('c-subject').value = ''; document.getElementById('c-message').value = '';
+          toast('Message sent. We will reply as soon as possible.', 'success');
+        } catch (e) { toast(e.message, 'error'); }
+      });
+    };
+  </script>
+  <script src="/js/footer.js"></script>
+</body>
+</html>

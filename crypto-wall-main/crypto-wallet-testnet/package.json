@@ -15,9 +15,11 @@
     "ethers": "^6.17.0",
     "express": "^4.19.2",
     "express-rate-limit": "^7.4.0",
+    "helmet": "^7.2.0",
     "jsonwebtoken": "^9.0.2",
     "jsqr": "^1.4.0",
     "mongoose": "^8.5.0",
+    "multer": "^2.5.0",
     "tronweb": "^6.5.1"
   },
   "devDependencies": {

@@ -6,6 +6,8 @@
 <title>Admin Panel — NovaWallet</title>
 <script src="/js/theme.js"></script>
 <link rel="stylesheet" href="/css/style.css" />
+<link rel="icon" href="/favicon.svg" type="image/svg+xml" />
+<meta name="robots" content="noindex" />
 </head>
 <body>
   <div class="nav glass">
@@ -97,6 +99,22 @@
     </div>
 
     <div class="card">
+      <h3>Global Copy Platform Fee</h3>
+      <p class="tag">This rate applies to eligible copy-trading profits platform-wide and overrides each trader's legacy platform fee. It is applied during the next fee settlement.</p>
+      <div style="display:flex;gap:10px;align-items:end;flex-wrap:wrap;max-width:460px;">
+        <div style="flex:1;min-width:160px;"><label for="copy-platform-fee">Platform fee (%)</label><input id="copy-platform-fee" type="number" min="0" max="20" step="0.1" value="2" /></div>
+        <button onclick="saveCopyPlatformFee()">Save global fee</button>
+      </div>
+      <div id="copy-platform-fee-feedback" class="tag" style="margin-top:8px;"></div>
+    </div>
+    <div class="modal" id="edit-active-copy-modal">
+      <div class="modal-inner glass" style="max-width:520px;">
+        <div class="modal-head"><h3>Edit Active Copy</h3><button class="modal-close" onclick="closeModal('edit-active-copy-modal')">×</button></div>
+        <div id="edit-active-copy-body"></div>
+      </div>
+    </div>
+
+    <div class="card">
       <h3>Profit Sharing</h3>
       <div class="grid grid-3" id="fee-stats"></div>
       <h4 style="margin-top: 18px; font-size: 13px; color: var(--text-mute); text-transform: uppercase; letter-spacing: 0.08em;">Top Earning Traders</h4>
@@ -129,6 +147,19 @@
       <div id="users"></div>
     </div>
 
+
+
+    <div class="modal" id="user-wallet-address-modal">
+      <div class="modal-inner glass" style="max-width:560px;">
+        <div class="modal-head">
+          <h3 id="user-wallet-address-title">User wallet addresses</h3>
+          <button class="modal-close" onclick="closeModal('user-wallet-address-modal')">×</button>
+        </div>
+        <p class="tag" style="margin-bottom:14px;">Edit the user's deposit address for each network. Changing an address does not move funds already sent to the previous address.</p>
+        <div id="user-wallet-address-fields"><div class="skeleton skeleton-row"></div></div>
+      </div>
+    </div>
+
     <div class="card">
       <h3>KYC Document Review</h3>
       <div id="kyc-queue"></div>
@@ -143,6 +174,30 @@
       <h3>All Transactions</h3>
       <div id="alltx"></div>
     </div>
+    <div class="card">
+      <h3>Customer Support Desk</h3>
+      <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:12px;"><select id="support-filter" onchange="loadAdminSupport()"><option value="">All tickets</option><option value="open">Open</option><option value="in_progress">In progress</option><option value="waiting_user">Waiting for user</option><option value="closed">Closed</option></select><button class="secondary sm" onclick="loadAdminSupport()">Refresh</button></div>
+      <div id="admin-support"></div>
+    </div>
+    <div class="card">
+      <h3>Trading & Platform Controls</h3>
+      <div class="row"><div><div class="row-label">Internal trading engine</div><div class="row-sub">Pause new orders without closing existing positions.</div></div><div class="switch" id="trading-enabled-switch" onclick="toggleTradingEngine()"></div></div>
+      <label>Pause message</label><input id="trading-pause-message" placeholder="Trading is temporarily paused" />
+      <button class="secondary sm" onclick="saveTradingSettings()">Save pause message</button><div id="trading-controls-feedback" class="tag"></div>
+      <h4 style="margin-top:18px;">Trading pair availability</h4><div id="pair-controls"></div>
+    </div>
+    <div class="card">
+      <h3>Open Trade Positions</h3>
+      <p class="tag">Edit each position’s entry price and protective levels, preview profit or loss, and close it at an administrator-entered price.</p>
+      <div id="admin-positions"></div>
+    </div>
+    <div class="card">
+      <h3>Database Controls</h3>
+      <p class="tag">Read-only health diagnostics and a logical JSON export. Destructive database commands are intentionally not exposed in the web UI.</p>
+      <button class="secondary" onclick="loadDatabaseHealth()">Check database health</button>
+      <button onclick="exportDatabase()">Export logical backup (JSON)</button>
+      <div id="database-health" style="margin-top:12px;"></div>
+    </div>
   </div>
 
   <script src="/js/ui.js"></script>
@@ -150,5 +205,6 @@
   <script src="/js/notifications.js"></script>
   <script src="/js/csv-import.js"></script>
   <script src="/js/admin.js"></script>
+  <script src="/js/admin-tools.js"></script>
 </body>
 </html>

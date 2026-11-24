@@ -6,6 +6,12 @@
 <title>Register — NovaWallet</title>
 <script src="/js/theme.js"></script>
 <link rel="stylesheet" href="/css/style.css" />
+<link rel="icon" href="/favicon.svg" type="image/svg+xml" />
+<meta name="theme-color" content="#060915" />
+<meta name="description" content="Create a free NovaWallet account." />
+<meta property="og:title" content="Register — NovaWallet" />
+<meta property="og:description" content="Create a free NovaWallet account." />
+<meta property="og:type" content="website" />
 </head>
 <body>
   <div class="center">
@@ -26,7 +32,7 @@
       <input id="email" type="email" placeholder="you@example.com" />
 
       <label>Password</label>
-      <input id="password" type="password" placeholder="min 6 characters" />
+      <input id="password" type="password" placeholder="At least 8 characters" autocomplete="new-password" data-strength />
 
       <label>Referral code (optional)</label>
       <input id="referral" placeholder="NVWXXXXXX" style="text-transform: uppercase;" />
@@ -37,7 +43,6 @@
           I agree to the <a href="/terms.html" target="_blank">Terms of Service</a>,
           <a href="/privacy.html" target="_blank">Privacy Policy</a>, and
           <a href="/risk.html" target="_blank">Risk Disclosure</a>.
-          I understand this is a demo platform.
         </span>
       </label>
 
@@ -51,5 +56,6 @@
   <script src="/js/ui.js"></script>
   <script src="/js/theme.js"></script>
   <script src="/js/auth.js"></script>
+<script src="/js/footer.js"></script>
 </body>
 </html>

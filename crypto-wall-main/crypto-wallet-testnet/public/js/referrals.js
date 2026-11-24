@@ -30,16 +30,16 @@ async function load() {
             <thead><tr><th>User</th><th>Joined</th><th>Status</th></tr></thead>
             <tbody>${r.history.map(h => `
               <tr>
-                <td>${h.referee?.username || '-'}</td>
+                <td>${escHtml(h.referee?.username || '-')}</td>
                 <td>${h.referee?.createdAt ? new Date(h.referee.createdAt).toLocaleDateString() : '-'}</td>
                 <td>${h.bonusPaid
                   ? '<span class="badge completed">paid</span>'
                   : '<span class="badge pending">pending first deposit</span>'}</td>
               </tr>`).join('')}
-            </tbody></table></div>` : '<div class="empty">No referrals yet</div>'}
+            </tbody></table></div>` : emptyState('🎁', 'No referrals yet', 'Share your code to start earning rewards.')}
       </div>`;
   } catch (e) {
-    el.innerHTML = `<div class="empty">${e.message}</div>`;
+    el.innerHTML = emptyState('⚠️', 'Could not load referral details', e.message || 'Please try again.');
   }
 }
 

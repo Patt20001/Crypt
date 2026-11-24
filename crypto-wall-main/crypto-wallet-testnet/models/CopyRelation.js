@@ -7,6 +7,7 @@ const copyRelationSchema = new mongoose.Schema({
   autoCopy:    { type: Boolean, default: true },
   active:      { type: Boolean, default: true },
   pnl:         { type: Number, default: 0 },
+  lastTraderRoi: { type: Number, default: null },
 
   traderFees:  { type: Number, default: 0 },
   platformFees:{ type: Number, default: 0 },

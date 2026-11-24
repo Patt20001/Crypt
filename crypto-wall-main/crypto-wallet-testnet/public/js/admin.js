@@ -27,85 +27,23 @@ async function loadStats() {
       <div class="card"><h3>Total Users</h3><div class="balance">${s.users}</div></div>
       <div class="card"><h3>Pending Txs</h3><div class="balance" style="background:linear-gradient(135deg,#fbbf24,#f59e0b);-webkit-background-clip:text;background-clip:text;color:transparent;">${s.pending}</div></div>
       <div class="card"><h3>Pending KYC</h3><div class="balance" style="background:linear-gradient(135deg,#a855f7,#6366f1);-webkit-background-clip:text;background-clip:text;color:transparent;">${s.pendingKyc || 0}</div></div>
-      <div class="card"><h3>Total Staked</h3><div class="balance">${(s.totalStaked || 0).toFixed(2)}</div></div>`;
+      <div class="card"><h3>Total Staked</h3><div class="balance">${(s.totalStaked || 0).toFixed(2)}</div></div><div class="card"><h3>Open Positions</h3><div class="balance">${s.openPositions || 0}</div></div><div class="card"><h3>Open Support Tickets</h3><div class="balance">${s.openTickets || 0}</div></div>`;
   } catch (e) { toast(e.message, 'error'); }
 }
 
 /* ============ PENDING TXS (inline amount entry) ============ */
-async function loadPending() {
-  const el = document.getElementById('pending');
-  el.innerHTML = '<div class="skeleton skeleton-row"></div>'.repeat(2);
+let adminPendingPage = 1;
+async function loadPending(page = adminPendingPage) {
+  const el = document.getElementById('pending'); el.innerHTML = '<div class="skeleton skeleton-row"></div>'.repeat(2);
   try {
-    const txs = await api('/api/admin/transactions');
-    const pending = txs.filter(t => t.status === 'pending');
-
-    if (!pending.length) {
-      el.innerHTML = '<div class="empty">No pending transactions</div>';
-      return;
-    }
-
-    el.innerHTML = `
-      <div class="table-wrap"><table>
-        <thead>
-          <tr>
-            <th>User</th>
-            <th>Type</th>
-            <th>Currency</th>
-            <th>Amount</th>
-            <th>Details</th>
-            <th>Actions</th>
-          </tr>
-        </thead>
-        <tbody>
-          ${pending.map(t => {
-            const isDeposit = t.type === 'deposit';
-            const amountCell = isDeposit
-              ? `<input
-                   type="number"
-                   step="0.01"
-                   min="0"
-                   class="inline-amount"
-                   id="amt-${t._id}"
-                   placeholder="0.00"
-                 />`
-              : `<span class="locked-amount" id="amt-${t._id}" data-value="${t.amount}">
-                   ${t.amount.toFixed(2)}
-                 </span>`;
-
-            const rejectBox = `
-              <input
-                type="text"
-                class="inline-reason"
-                id="reason-${t._id}"
-                placeholder="Reject reason (optional)"
-                style="display:none; width: 160px; margin: 6px 0 0 0; font-size: 12px; padding: 6px 8px;"
-              />`;
-
-            return `
-              <tr data-txid="${t._id}">
-                <td>${t.user?.username || '-'}</td>
-                <td style="text-transform: capitalize;">${t.type}</td>
-                <td>${t.currency}</td>
-                <td>
-                  ${amountCell}
-                  ${rejectBox}
-                </td>
-                <td class="tag">${t.address || t.note || '-'}</td>
-                <td>
-                  <div style="display:flex; gap:6px; align-items:center;">
-                    <button class="sm" title="Approve"
-                      onclick="approveTx('${t._id}','${t.type}')">✓ Approve</button>
-                    <button class="danger sm" title="Reject"
-                      onclick="toggleReject('${t._id}')">✕ Reject</button>
-                    <button class="danger sm" id="confirm-reject-${t._id}"
-                      style="display:none;"
-                      onclick="confirmReject('${t._id}')">Confirm</button>
-                  </div>
-                </td>
-              </tr>`;
-          }).join('')}
-        </tbody>
-      </table></div>`;
+    const data = await api(`/api/admin/transactions/page?page=${page}&limit=20&status=pending`); adminPendingPage = data.page;
+    const pending = data.items || [];
+    if (!pending.length) { el.innerHTML = '<div class="empty">No pending transactions</div>'; return; }
+    el.innerHTML = `<div class="table-wrap"><table><thead><tr><th>User</th><th>Type</th><th>Currency</th><th>Amount</th><th>Details</th><th>Actions</th></tr></thead><tbody>${pending.map(t => {
+      const isDeposit = t.type === 'deposit';
+      const amountCell = isDeposit ? `<input type="number" step="0.00000001" min="0" class="inline-amount" id="amt-${t._id}" placeholder="Received amount" />` : `<span class="locked-amount" id="amt-${t._id}" data-value="${t.amount}">${Number(t.amount||0).toFixed(6)}</span>`;
+      return `<tr data-txid="${t._id}"><td>${t.user?.username || '-'}</td><td>${t.type}</td><td>${t.currency}</td><td>${amountCell}${t.fee?`<div class="tag">Fee ${t.fee} · net ${t.netAmount}</div>`:''}<input type="text" id="reason-${t._id}" placeholder="Reject reason" style="display:none;width:160px;margin-top:6px;font-size:12px;padding:6px 8px;"></td><td class="tag">${t.address || t.note || '-'}</td><td><div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap;"><button class="sm" onclick="approveTx('${t._id}','${t.type}')">✓ Approve</button><button class="danger sm" onclick="toggleReject('${t._id}')">✕ Reject</button><button class="danger sm" id="confirm-reject-${t._id}" style="display:none;" onclick="confirmReject('${t._id}')">Confirm</button></div></td></tr>`;
+    }).join('')}</tbody></table></div><div style="display:flex;justify-content:space-between;align-items:center;margin-top:12px;"><span class="tag">${data.total} pending · Page ${data.page}/${Math.max(1,data.pages)}</span><div><button class="secondary sm" ${page<=1?'disabled':''} onclick="loadPending(${page-1})">Previous</button> <button class="secondary sm" ${page>=data.pages?'disabled':''} onclick="loadPending(${page+1})">Next</button></div></div>`;
   } catch (e) { toast(e.message, 'error'); }
 }
 
@@ -161,34 +99,19 @@ window.confirmReject = async (id) => {
 };
 
 /* ============ USERS ============ */
-async function loadUsers() {
-  const el = document.getElementById('users');
-  el.innerHTML = '<div class="skeleton skeleton-row"></div>'.repeat(3);
+let adminUsersPage = 1;
+async function loadUsers(page = adminUsersPage) {
+  const el = document.getElementById('users'); el.innerHTML = '<div class="skeleton skeleton-row"></div>'.repeat(3);
   try {
-    const users = await api('/api/admin/users');
-    el.innerHTML = `
-      <div class="table-wrap"><table>
-        <thead><tr><th>Username</th><th>Email</th><th>USDT</th><th>Role</th><th>KYC</th><th>Status</th><th>Actions</th></tr></thead>
-        <tbody>${users.map(u => `
-          <tr>
-            <td>${u.username}</td>
-            <td class="tag">${u.email}</td>
-            <td style="font-weight: 600;">${u.balances.USDT.toFixed(2)}</td>
-            <td>${u.role}</td>
-            <td><span class="badge ${
-              u.kycStatus === 'verified' ? 'completed'
-              : u.kycStatus === 'pending' ? 'pending'
-              : 'rejected'
-            }">${u.kycStatus}</span></td>
-            <td>${u.isBanned ? '<span class="badge rejected">banned</span>' : '<span class="badge completed">active</span>'}</td>
-            <td style="display:flex; gap:6px; flex-wrap:wrap;">
-              <button class="secondary sm" onclick="credit('${u._id}')">+10 USDT</button>
-              <button class="secondary sm" onclick="kyc('${u._id}')">Set KYC</button>
-              <button class="${u.isBanned ? 'secondary' : 'danger'} sm" onclick="ban('${u._id}')">${u.isBanned ? 'Unban' : 'Ban'}</button>
-            </td>
-          </tr>`).join('')}
-        </tbody>
-      </table></div>`;
+    const data = await api(`/api/admin/users/page?page=${page}&limit=20`); adminUsersPage = data.page;
+    const users = data.items || [];
+    if (!users.length) { el.innerHTML = '<div class="empty">No users found</div>'; return; }
+    el.innerHTML = `<div class="table-wrap"><table><thead><tr><th>Username</th><th>Email</th><th>USDT</th><th>Role</th><th>KYC</th><th>Status</th><th>Actions</th></tr></thead><tbody>${users.map(u => `
+      <tr><td>${u.username}</td><td class="tag">${u.email}</td><td style="font-weight:600;">${Number(u.balances?.USDT || 0).toFixed(2)}</td><td>${u.role}</td>
+      <td><span class="badge ${u.kycStatus === 'verified' ? 'completed' : u.kycStatus === 'pending' ? 'pending' : 'rejected'}">${u.kycStatus}</span></td>
+      <td>${u.isBanned ? '<span class="badge rejected">banned</span>' : '<span class="badge completed">active</span>'}</td>
+      <td style="display:flex;gap:6px;flex-wrap:wrap;"><button class="secondary sm" onclick="credit('${u._id}')">Adjust balance</button><button class="secondary sm" onclick="editUserWalletAddresses('${u._id}')">Wallet addresses</button><button class="secondary sm" onclick="kyc('${u._id}')">Set KYC</button><button class="${u.isBanned ? 'secondary' : 'danger'} sm" onclick="ban('${u._id}')">${u.isBanned ? 'Unban' : 'Ban'}</button></td></tr>`).join('')}</tbody></table></div>
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-top:12px;"><span class="tag">${data.total} users · Page ${data.page} of ${Math.max(1,data.pages)}</span><div><button class="secondary sm" ${page<=1?'disabled':''} onclick="loadUsers(${page-1})">Previous</button> <button class="secondary sm" ${page>=data.pages?'disabled':''} onclick="loadUsers(${page+1})">Next</button></div></div>`;
   } catch (e) { toast(e.message, 'error'); }
 }
 
@@ -256,26 +179,14 @@ async function loadStakes() {
 }
 
 /* ============ ALL TRANSACTIONS ============ */
-async function loadAllTxs() {
-  const el = document.getElementById('alltx');
-  el.innerHTML = '<div class="skeleton skeleton-row"></div>'.repeat(3);
+let adminTransactionsPage = 1;
+async function loadAllTxs(page = adminTransactionsPage) {
+  const el = document.getElementById('alltx'); el.innerHTML = '<div class="skeleton skeleton-row"></div>'.repeat(3);
   try {
-    const txs = await api('/api/admin/transactions');
+    const data = await api(`/api/admin/transactions/page?page=${page}&limit=25`); adminTransactionsPage = data.page; const txs = data.items || [];
     if (!txs.length) { el.innerHTML = '<div class="empty">No transactions</div>'; return; }
-    el.innerHTML = `
-      <div class="table-wrap"><table>
-        <thead><tr><th>Date</th><th>User</th><th>Type</th><th>Currency</th><th>Amount</th><th>Status</th></tr></thead>
-        <tbody>${txs.slice(0, 50).map(t => `
-          <tr>
-            <td>${new Date(t.createdAt).toLocaleString()}</td>
-            <td>${t.user?.username || '-'}</td>
-            <td style="text-transform: capitalize;">${t.type}</td>
-            <td>${t.currency}</td>
-            <td style="font-weight: 600;">${t.amount}</td>
-            <td><span class="badge ${t.status}">${t.status}</span></td>
-          </tr>`).join('')}
-        </tbody>
-      </table></div>`;
+    el.innerHTML = `<div class="table-wrap"><table><thead><tr><th>Date</th><th>User</th><th>Type</th><th>Currency</th><th>Amount</th><th>Status</th></tr></thead><tbody>${txs.map(t => `<tr><td>${new Date(t.createdAt).toLocaleString()}</td><td>${t.user?.username || '-'}</td><td>${t.type}</td><td>${t.currency}</td><td>${Number(t.amount || 0)}${t.fee ? `<div class="tag">Fee ${t.fee} · net ${t.netAmount}</div>` : ''}</td><td><span class="badge ${t.status}">${t.status}</span></td></tr>`).join('')}</tbody></table></div>
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-top:12px;"><span class="tag">${data.total} transactions · Page ${data.page} of ${Math.max(1,data.pages)}</span><div><button class="secondary sm" ${page<=1?'disabled':''} onclick="loadAllTxs(${page-1})">Previous</button> <button class="secondary sm" ${page>=data.pages?'disabled':''} onclick="loadAllTxs(${page+1})">Next</button></div></div>`;
   } catch (e) { toast(e.message, 'error'); }
 }
 
@@ -325,13 +236,13 @@ async function loadMaintenance() {
 }
 
 window.credit = async (id) => {
+  const amount = Number(prompt('Balance adjustment in USDT (positive to credit, negative to debit)', '10'));
+  if (!Number.isFinite(amount) || amount === 0) return;
+  const reason = prompt('Reason for this adjustment (required)', 'Balance correction');
+  if (!reason || reason.trim().length < 5) return toast('A reason of at least 5 characters is required', 'warn');
   try {
-    await api(`/api/admin/users/${id}/balance`, {
-      method: 'POST',
-      body: JSON.stringify({ currency: 'USDT', amount: 10 })
-    });
-    toast('+10 USDT credited', 'success');
-    refreshAll();
+    await api(`/api/admin/users/${id}/balance`, { method: 'POST', body: JSON.stringify({ currency: 'USDT', amount, reason }) });
+    toast('Balance adjustment recorded', 'success'); refreshAll();
   } catch (e) { toast(e.message, 'error'); }
 };
 
@@ -370,40 +281,6 @@ window.saveBanner = async () => {
   } catch (e) { toast(e.message, 'error'); }
 };
 
-/* ============ COPY TRADING — SEED DEMO TRADERS ============ */
-window.seedCopyTraders = async (force = false) => {
-  const resultEl = document.getElementById('seed-copy-result');
-  if (resultEl) resultEl.innerHTML = '<p class="tag">Seeding…</p>';
-  try {
-    const url = force ? '/api/copy/seed?force=true' : '/api/copy/seed';
-    const r = await api(url, { method: 'POST' });
-    if (resultEl) {
-      resultEl.innerHTML = `<p class="success">✅ ${r.message || 'Seeded'} · ${r.count || 0} traders</p>`;
-    }
-    toast(r.message || 'Seeded', 'success');
-    refreshAll();
-  } catch (e) {
-    if (resultEl) resultEl.innerHTML = `<p class="error">❌ ${e.message}</p>`;
-    toast(e.message, 'error');
-  }
-};
-
-window.populateCopyTraders = async (count = 100) => {
-  const resultEl = document.getElementById('seed-copy-result');
-  if (resultEl) resultEl.innerHTML = `<p class="tag">Generating ${count} traders…</p>`;
-  try {
-    const r = await api(`/api/copy/populate?count=${count}`, { method: 'POST' });
-    if (resultEl) {
-      resultEl.innerHTML = `<p class="success">✅ ${r.message} · Total in database: ${r.total}</p>`;
-    }
-    toast(`${r.count} traders generated`, 'success');
-    refreshAll();
-  } catch (e) {
-    if (resultEl) resultEl.innerHTML = `<p class="error">❌ ${e.message}</p>`;
-    toast(e.message, 'error');
-  }
-};
-
 /* ============ COPY TRADING ACTIVITY ============ */
 async function loadCopyStats() {
   const el = document.getElementById('copy-stats');
@@ -424,114 +301,73 @@ async function loadCopyRelations() {
   el.innerHTML = '<div class="skeleton skeleton-row"></div>'.repeat(3);
   try {
     const rels = await api('/api/copy/admin/relations');
-    if (!rels.length) {
-      el.innerHTML = '<div class="empty">No copy relations yet</div>';
-      return;
-    }
-    el.innerHTML = `
-      <div class="table-wrap"><table>
-        <thead><tr>
-          <th>Follower</th><th>Trader</th><th>Allocated</th><th>PnL</th>
-          <th>Status</th><th>Since</th><th>Actions</th>
-        </tr></thead>
-        <tbody>${rels.map(r => `
-          <tr>
-            <td>${r.follower?.username || '-'}<div class="tag">${r.follower?.email || ''}</div></td>
-            <td>${r.trader?.displayName || '-'}<div class="tag">${r.trader?.tier || ''}</div></td>
-            <td style="font-weight:600;">${r.allocation.toFixed(2)} USDT</td>
-            <td style="color: ${r.pnl >= 0 ? 'var(--accent)' : '#fca5a5'}; font-weight:600;">
-              ${r.pnl >= 0 ? '+' : ''}${(r.pnl || 0).toFixed(2)}
-            </td>
-            <td>${r.active
-              ? '<span class="badge completed">active</span>'
-              : '<span class="badge rejected">stopped</span>'}</td>
-            <td class="tag">${new Date(r.createdAt).toLocaleDateString()}</td>
-            <td>${r.active
-              ? `<button class="danger sm" onclick="stopCopy('${r._id}')">Stop</button>`
-              : ''}</td>
-          </tr>`).join('')}
-        </tbody>
-      </table></div>`;
+    if (!rels.length) { el.innerHTML = '<div class="empty">No copy relations yet</div>'; return; }
+    el.innerHTML = `<div class="table-wrap"><table>
+      <thead><tr><th>Follower</th><th>Trader</th><th>Allocation</th><th>Trader ROI</th><th>Copy PnL</th><th>Status</th><th>Since</th><th>Actions</th></tr></thead>
+      <tbody>${rels.map(r => {
+        const pnl = Number(r.pnl || 0), roi = Number(r.trader?.roi30d || 0);
+        return `<tr>
+          <td>${r.follower?.username || '-'}<div class="tag">${r.follower?.email || ''}</div></td>
+          <td>${r.trader?.displayName || '-'}<div class="tag">${r.trader?.tier || ''} · win ${Number(r.trader?.winRate || 0).toFixed(1)}%</div></td>
+          <td>${Number(r.allocation || 0).toFixed(2)} USDT</td>
+          <td style="color:${roi >= 0 ? 'var(--accent)' : '#fca5a5'};font-weight:600;">${roi >= 0 ? '+' : ''}${roi.toFixed(2)}%</td>
+          <td style="color:${pnl >= 0 ? 'var(--accent)' : '#fca5a5'};font-weight:600;">${pnl >= 0 ? '+' : ''}${pnl.toFixed(2)} USDT</td>
+          <td>${r.active ? '<span class="badge completed">active</span>' : '<span class="badge rejected">stopped</span>'}</td>
+          <td class="tag">${new Date(r.createdAt).toLocaleDateString()}</td>
+          <td style="display:flex;gap:4px;flex-wrap:wrap;">
+            ${r.active ? `<button class="secondary sm" onclick="openEditActiveCopy('${r._id}',${pnl},${roi},${Number(r.trader?.winRate || 0)},${Number(r.trader?.followers || 0)},${Number(r.trader?.totalTrades || 0)})">Edit stats</button><button class="danger sm" onclick="stopCopy('${r._id}')">Stop</button>` : ''}
+            ${r.trader ? `<button class="secondary sm" onclick="openAdjustFees('${r.trader._id}',${Number(r.trader.performanceFee || 10)},${Number(r.trader.platformFee || 2)},'${String(r.trader.displayName || '').replace(/'/g, '')}')">Trader fees</button>` : ''}
+          </td>
+        </tr>`;
+      }).join('')}</tbody></table></div>`;
   } catch (e) { toast(e.message, 'error'); }
 }
 
-window.stopCopy = async (id) => {
-  if (!confirm('Stop this copy relation? Funds return to the user.')) return;
+window.openEditActiveCopy = (id, pnl, roi, winRate, followers, totalTrades) => {
+  document.getElementById('edit-active-copy-body').innerHTML = `
+    <p class="tag" style="margin-bottom:14px;">Edit this follower's PnL and the linked trader's shared stats. Changes to trader ROI, win rate, followers and trades appear on that trader's public profile and all active copies.</p>
+    <label>Copy PnL (USDT)</label><input id="edit-copy-pnl" type="number" step="0.0001" value="${pnl}" />
+    <label>Trader 30-day ROI (%)</label><input id="edit-copy-roi" type="number" step="0.01" min="-100" max="1000" value="${roi}" />
+    <label>Trader win rate (%)</label><input id="edit-copy-winrate" type="number" step="0.1" min="0" max="100" value="${winRate}" />
+    <label>Trader followers</label><input id="edit-copy-followers" type="number" step="1" min="0" value="${followers}" />
+    <label>Trader total trades</label><input id="edit-copy-trades" type="number" step="1" min="0" value="${totalTrades}" />
+    <button style="width:100%;margin-top:12px;" onclick="saveEditActiveCopy('${id}')">Save changes</button>`;
+  openModal('edit-active-copy-modal');
+};
+
+window.saveEditActiveCopy = async id => {
+  const payload = {
+    pnl: Number(document.getElementById('edit-copy-pnl').value),
+    roi30d: Number(document.getElementById('edit-copy-roi').value),
+    winRate: Number(document.getElementById('edit-copy-winrate').value),
+    followers: Number(document.getElementById('edit-copy-followers').value),
+    totalTrades: Number(document.getElementById('edit-copy-trades').value)
+  };
   try {
-    await api(`/api/copy/admin/relations/${id}/stop`, { method: 'POST' });
-    toast('Relation stopped', 'success');
+    await api(`/api/copy/admin/relations/${id}/edit`, { method: 'POST', body: JSON.stringify(payload) });
+    closeModal('edit-active-copy-modal'); toast('Active copy and trader stats updated', 'success');
     await Promise.all([loadCopyStats(), loadCopyRelations()]);
   } catch (e) { toast(e.message, 'error'); }
 };
 
-// Hook into refreshAll
-const _origRefresh = refreshAll;
-refreshAll = async function () {
-  await _origRefresh();
-  await loadCopyStats();
-  await loadCopyRelations();
+async function loadCopyPlatformFee() {
+  try {
+    const result = await api('/api/copy/admin/platform-fee');
+    const input = document.getElementById('copy-platform-fee');
+    if (input) input.value = Number(result.platformFeePercent).toFixed(2).replace(/\.00$/, '');
+  } catch (e) { console.warn('Could not load global copy platform fee:', e.message); }
+}
+
+window.saveCopyPlatformFee = async () => {
+  const input = document.getElementById('copy-platform-fee');
+  const fee = Number(input?.value);
+  if (!Number.isFinite(fee) || fee < 0 || fee > 20) return toast('Platform fee must be between 0 and 20%', 'warn');
+  try {
+    const result = await api('/api/copy/admin/platform-fee', { method: 'POST', body: JSON.stringify({ platformFeePercent: fee }) });
+    document.getElementById('copy-platform-fee-feedback').textContent = `Global platform fee set to ${result.platformFeePercent}%`;
+    toast('Global copy platform fee saved', 'success');
+  } catch (e) { toast(e.message, 'error'); }
 };
-
-/* ============ COPY TRADING ACTIVITY ============ */
-async function loadCopyStats() {
-  const el = document.getElementById('copy-stats');
-  if (!el) return;
-  el.innerHTML = '<div class="skeleton skeleton-card"></div>'.repeat(3);
-  try {
-    const s = await api('/api/copy/admin/stats');
-    el.innerHTML = `
-      <div class="card"><h3>Active Copies</h3><div class="balance">${s.activeRelations}</div></div>
-      <div class="card"><h3>Total Allocated</h3><div class="balance">${s.totalAllocated.toFixed(2)}</div></div>
-      <div class="card"><h3>Total Traders</h3><div class="balance">${s.traders}</div></div>`;
-  } catch (e) { toast(e.message, 'error'); }
-}
-
-async function loadCopyRelations() {
-  const el = document.getElementById('copy-relations');
-  if (!el) return;
-  el.innerHTML = '<div class="skeleton skeleton-row"></div>'.repeat(3);
-  try {
-    const rels = await api('/api/copy/admin/relations');
-    if (!rels.length) {
-      el.innerHTML = '<div class="empty">No copy relations yet</div>';
-      return;
-    }
-    el.innerHTML = `
-      <div class="table-wrap"><table>
-        <thead><tr>
-          <th>Follower</th><th>Trader</th><th>Allocated</th><th>PnL</th>
-          <th>Status</th><th>Since</th><th>Actions</th>
-        </tr></thead>
-        <tbody>${rels.map(r => `
-          <tr>
-            <td>${r.follower?.username || '-'}<div class="tag">${r.follower?.email || ''}</div></td>
-            <td>${r.trader?.displayName || '-'}<div class="tag">${r.trader?.tier || ''}</div></td>
-            <td style="font-weight:600;">${r.allocation.toFixed(2)} USDT</td>
-            <td style="color: ${r.pnl >= 0 ? 'var(--accent)' : '#fca5a5'}; font-weight:600;">
-              ${r.pnl >= 0 ? '+' : ''}${(r.pnl || 0).toFixed(2)}
-            </td>
-            <td>${r.active
-              ? '<span class="badge completed">active</span>'
-              : '<span class="badge rejected">stopped</span>'}</td>
-            <td class="tag">${new Date(r.createdAt).toLocaleDateString()}</td>
-            <td style="display:flex; gap:4px; flex-wrap:wrap;">
-  ${r.active
-    ? `<button class="danger sm" onclick="stopCopy('${r._id}')">Stop</button>`
-    : ''}
-  <button class="secondary sm" onclick="openAdjustPnl('${r._id}', ${r.pnl || 0}, '${r.trader?.displayName || ''}')">
-    PnL
-  </button>
-  ${r.trader
-    ? `<button class="secondary sm" onclick="openAdjustFees('${r.trader._id}', ${r.trader.performanceFee || 10}, ${r.trader.platformFee || 2}, '${r.trader.displayName}')">
-         Fees
-       </button>`
-    : ''}
-</td>
-          </tr>`).join('')}
-        </tbody>
-      </table></div>`;
-  } catch (e) { toast(e.message, 'error'); }
-}
 
 window.stopCopy = async (id) => {
   if (!confirm('Stop this copy relation? Funds return to the user.')) return;
@@ -617,7 +453,8 @@ window.populateCopyTraders = async (count = 100) => {
 const _origRefreshAll = refreshAll;
 refreshAll = async function () {
   await _origRefreshAll();
-  await Promise.all([loadCopyStats(), loadCopyRelations(), loadFeeStats()]);
+  await Promise.all([loadCopyStats(), loadCopyRelations(), loadFeeStats(), loadCopyPlatformFee()]);
+  if (typeof refreshAdminTools === 'function') await refreshAdminTools();
 };
 
 window.openAdjustPnl = (relationId, currentPnl, traderName) => {
@@ -666,9 +503,9 @@ window.openAdjustFees = async (traderId, currentPerf, currentPlat, traderName) =
     <input id="perf-fee" type="number" min="0" max="50" value="${currentPerf}" />
     <p class="tag" style="margin-top: -6px; margin-bottom: 14px;">% of follower's profit paid to trader (0–50)</p>
 
-    <label>Platform Fee (%)</label>
+    <label>Legacy Trader Platform Fee (%)</label>
     <input id="plat-fee" type="number" min="0" max="20" value="${currentPlat}" />
-    <p class="tag" style="margin-top: -6px; margin-bottom: 14px;">% of follower's profit paid to platform (0–20)</p>
+    <p class="tag" style="margin-top: -6px; margin-bottom: 14px;">Fallback only. The Global Copy Platform Fee setting overrides this rate for new settlements.</p>
 
     <button style="width:100%" onclick="confirmAdjustFees('${traderId}')">Save Fees</button>
   `;

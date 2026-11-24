@@ -10,6 +10,7 @@ const auth = async (req, res, next) => {
     const decoded = jwt.verify(header.split(' ')[1], process.env.JWT_SECRET);
     const user = await User.findById(decoded.id).select('-password');
     if (!user) return res.status(401).json({ error: 'User not found' });
+    if ((decoded.v || 0) !== (user.tokenVersion || 0)) return res.status(401).json({ error: 'Session expired. Please sign in again.' });
     if (user.isBanned) return res.status(403).json({ error: 'Account banned' });
     req.user = user;
     next();

@@ -1,0 +1,78 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Settings — NovaWallet</title>
+<link rel="icon" href="/favicon.svg" type="image/svg+xml" />
+<meta name="theme-color" content="#060915" />
+<meta name="robots" content="noindex" />
+<script src="/js/theme.js"></script>
+<link rel="stylesheet" href="/css/style.css" />
+</head>
+<body>
+  <div class="nav glass">
+    <a href="/dashboard.html" class="brand" style="text-decoration:none;color:inherit;"><div class="brand-logo">₮</div><span>Nova<span class="brand-accent">Wallet</span></span></a>
+    <div class="nav-links"></div>
+  </div>
+
+  <div class="container" style="max-width: 860px;">
+    <h2>Settings</h2>
+    <p class="tag" style="margin-bottom:18px;">Manage account security and preferences.</p>
+
+    <div class="settings-grid">
+
+      <div class="card">
+        <h3>Security overview</h3>
+        <div id="sec-overview"><div class="skeleton skeleton-row"></div><div class="skeleton skeleton-row"></div><div class="skeleton skeleton-row"></div></div>
+      </div>
+
+      <div class="card">
+        <div style="display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap;">
+          <h3>Withdrawal whitelist</h3>
+          <label class="switch-label" style="display:flex;align-items:center;gap:10px;margin:0;">
+            <span class="tag" id="wl-state">Off</span>
+            <div class="switch" id="wl-switch" role="switch" aria-checked="false" tabindex="0"></div>
+          </label>
+        </div>
+        <p class="tag" style="margin:6px 0 14px;">When on, withdrawals can only be sent to the addresses below. New addresses can be used after a <span id="wl-hours">24</span>-hour security waiting period.</p>
+        <div id="wl-list"><div class="skeleton skeleton-row"></div><div class="skeleton skeleton-row"></div></div>
+
+        <h4 style="margin:18px 0 8px;">Add an address</h4>
+        <div class="grid grid-2">
+          <div><label>Network</label>
+            <select id="wl-network"><option value="TRC20">Tron (TRC20)</option><option value="ERC20">Ethereum (ERC20)</option><option value="BEP20">BNB Chain (BEP20)</option></select></div>
+          <div><label>Label</label><input id="wl-label" maxlength="40" placeholder="e.g. My hardware wallet" /></div>
+        </div>
+        <label>Address</label>
+        <input id="wl-address" placeholder="Wallet address" />
+        <button id="wl-add" onclick="addWhitelist()">Add address</button>
+      </div>
+
+      <div class="card">
+        <div style="display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap;">
+          <h3>Sign-in activity</h3>
+          <button class="secondary sm" id="logout-all-btn" onclick="logoutAll()">Sign out of all devices</button>
+        </div>
+        <p class="tag" style="margin:6px 0 10px;">Your most recent sign-ins. If you don&rsquo;t recognise one, change your password and sign out of all devices.</p>
+        <div id="activity-list"><div class="skeleton skeleton-row"></div><div class="skeleton skeleton-row"></div><div class="skeleton skeleton-row"></div></div>
+      </div>
+
+      <div class="card">
+        <h3>Preferences</h3>
+        <div class="set-row"><div><b>Theme</b><div class="tag">Switch between dark and light mode.</div></div>
+          <button class="secondary sm" data-action="toggle-theme">🌓 Toggle theme</button></div>
+        <div class="set-row"><div><b>Help &amp; support</b><div class="tag">Find answers or contact our team.</div></div>
+          <div style="display:flex;gap:8px;"><a class="btn secondary sm" href="/faq.html">FAQ</a><a class="btn sm" href="/contact.html">Contact</a></div></div>
+      </div>
+
+    </div>
+  </div>
+
+  <script src="/js/ui.js"></script>
+  <script src="/js/auth.js"></script>
+  <script src="/js/notifications.js"></script>
+  <script src="/js/settings.js"></script>
+  <script src="/js/footer.js"></script>
+</body>
+</html>

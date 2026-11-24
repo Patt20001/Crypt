@@ -7,6 +7,9 @@
 <script src="/js/theme.js"></script>
 <link rel="stylesheet" href="/css/style.css" />
 <script src="https://cdn.jsdelivr.net/npm/qrcodejs@1.0.0/qrcode.min.js"></script>
+<link rel="icon" href="/favicon.svg" type="image/svg+xml" />
+<meta name="theme-color" content="#060915" />
+<meta name="robots" content="noindex" />
 </head>
 <body>
   <div class="nav glass">
@@ -86,9 +89,9 @@
         </div>
         <div id="pwd-form" style="display:none; margin-top: 14px;">
           <label>Current password</label>
-          <input id="cur-pwd" type="password" />
+          <input id="cur-pwd" type="password" autocomplete="current-password" />
           <label>New password</label>
-          <input id="new-pwd" type="password" />
+          <input id="new-pwd" type="password" autocomplete="new-password" data-strength />
           <button onclick="changePwd()">Save password</button>
         </div>
 
@@ -100,6 +103,24 @@
           <button class="secondary sm" onclick="openSecurityQuestions()">Setup</button>
         </div>
       </div>
+    </div>
+
+    <!-- CUSTOMER SUPPORT -->
+    <div class="card" id="contact-support">
+      <h3>Contact Support</h3>
+      <p class="tag" style="margin-bottom:14px;">Create a support request and follow replies from the NovaWallet team.</p>
+      <div class="grid grid-2">
+        <div>
+          <label>Category</label>
+          <select id="support-category"><option value="account">Account</option><option value="deposit">Deposit</option><option value="withdrawal">Withdrawal</option><option value="trading">Trading</option><option value="technical">Technical issue</option><option value="other">Other</option></select>
+          <label>Subject</label><input id="support-subject" maxlength="160" placeholder="How can we help?" />
+        </div>
+        <div><label>Message</label><textarea id="support-message" rows="5" maxlength="5000" placeholder="Describe the issue and include relevant transaction references. Do not share passwords or 2FA codes."></textarea></div>
+      </div>
+      <button id="support-submit" onclick="submitSupportTicket()">Submit support request</button>
+      <div id="support-feedback" class="tag" style="margin-top:10px;"></div>
+      <h4 style="margin-top:22px;">Your support requests</h4>
+      <div id="support-ticket-list"><div class="skeleton skeleton-row"></div></div>
     </div>
 
     <!-- KYC VERIFICATION -->
@@ -237,5 +258,7 @@
   <script src="/js/prices.js"></script>
   <script src="/js/notifications.js"></script>
   <script src="/js/profile.js"></script>
+  <script src="/js/support.js"></script>
+<script src="/js/footer.js"></script>
 </body>
 </html>

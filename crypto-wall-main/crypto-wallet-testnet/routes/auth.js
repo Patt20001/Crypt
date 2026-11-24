@@ -40,8 +40,8 @@ router.post('/register', async (req, res) => {
     if (!username || !email || !password)
       return res.status(400).json({ error: 'All fields required' });
 
-    if (password.length < 6)
-      return res.status(400).json({ error: 'Password min 6 characters' });
+    if (password.length < 8)
+      return res.status(400).json({ error: 'Password must be at least 8 characters' });
 
     if (!acceptTerms)
       return res.status(400).json({ error: 'You must accept the Terms & Risk Disclosure' });
@@ -157,7 +157,7 @@ router.post('/login', async (req, res) => {
     user.loginHistory = [
       { ip, userAgent: ua, at: new Date() },
       ...(user.loginHistory || [])
-    ].slice(0, 5);
+    ].slice(0, 20);
 
     await user.save();
 
@@ -323,7 +323,7 @@ router.post('/2fa/disable', auth, async (req, res) => {
     const pwdOk = await bcrypt.compare(password, user.password);
 
     if (!pwdOk)
-      return res.status(401).json({ error: 'Incorrect password' });
+      return res.status(400).json({ error: 'Incorrect password' });
 
     const cleanCode = String(code).replace(/\s/g, '');
 
@@ -494,8 +494,8 @@ router.post('/forgot-password/reset', async (req, res) => {
     if (!token || !newPassword)
       return res.status(400).json({ error: 'Token and password required' });
 
-    if (newPassword.length < 6)
-      return res.status(400).json({ error: 'Password min 6 chars' });
+    if (newPassword.length < 8)
+      return res.status(400).json({ error: 'Password must be at least 8 characters' });
 
     const user = await User.findOne({
       resetToken: token,

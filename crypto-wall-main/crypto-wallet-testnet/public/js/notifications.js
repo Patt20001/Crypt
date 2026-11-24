@@ -41,7 +41,7 @@ function renderDropdown(list) {
   if (!panel) return;
 
   if (!list.length) {
-    panel.innerHTML = '<div class="empty" style="padding:20px;">No notifications</div>';
+    panel.innerHTML = emptyState('🔔', 'No notifications', 'Account and security updates will appear here.');
     return;
   }
 
@@ -65,8 +65,8 @@ function renderDropdown(list) {
         <div class="notif-item ${n.read ? '' : 'unread'}" onclick="markRead('${n._id}')">
           <div class="notif-icon">${icons[n.type] || 'ℹ️'}</div>
           <div style="flex:1; min-width:0;">
-            <div class="notif-title">${n.title}</div>
-            ${n.body ? `<div class="notif-body">${n.body}</div>` : ''}
+            <div class="notif-title">${escHtml(n.title)}</div>
+            ${n.body ? `<div class="notif-body">${escHtml(n.body)}</div>` : ''}
             <div class="notif-time">${timeAgo(n.createdAt)}</div>
           </div>
         </div>`).join('')}

@@ -77,7 +77,9 @@ const PRIMARY_LINKS = [
 const SECONDARY_LINKS = [
   { href: '/networks.html',  icon: '🌐', label: 'Networks',     key: 'networks' },
   { href: '/referrals.html', icon: '🎁', label: 'Refer & Earn', key: 'referrals' },
-  { href: '/profile.html',   icon: '👤', label: 'Profile',      key: 'profile' }
+  { href: '/profile.html',   icon: '👤', label: 'Profile',      key: 'profile' },
+  { href: '/settings.html',  icon: '⚙️', label: 'Settings',     key: 'settings' },
+  { href: '/faq.html',       icon: '❓', label: 'Help & FAQ',   key: 'faq' }
 ];
 
 /* ============================================================
@@ -308,4 +310,151 @@ document.addEventListener('DOMContentLoaded', () => {
   if (localStorage.getItem('token')) {
     renderTopNav();
   }
+});
+
+/* ============================================================
+   SHARED HELPERS: escaping, empty states, confirmation dialogs
+   ============================================================ */
+function escHtml(v) {
+  return String(v ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+}
+
+/* Consistent empty state. action = { label, href } optional. */
+function emptyState(icon, title, sub = '', action = null) {
+  return `<div class="empty empty-rich">
+    <div class="empty-icon">${icon}</div>
+    <div class="empty-title">${escHtml(title)}</div>
+    ${sub ? `<div class="empty-sub">${escHtml(sub)}</div>` : ''}
+    ${action ? `<a class="btn sm" href="${escHtml(action.href)}">${escHtml(action.label)}</a>` : ''}
+  </div>`;
+}
+
+/* Consistent confirmation dialog for money and security actions.
+   confirmAction({ title, message, details: [[label, value]], confirmText, danger, input: { label, placeholder, type, maxlength, inputmode } })
+   Resolves: false/null when cancelled; true when confirmed; the entered text when `input` is used. */
+function confirmAction(opts = {}) {
+  const { title = 'Please confirm', message = '', details = [], confirmText = 'Confirm', cancelText = 'Cancel', danger = false, input = null } = opts;
+  return new Promise(resolve => {
+    document.getElementById('confirm-modal')?.remove();
+    const m = document.createElement('div');
+    m.className = 'modal open'; m.id = 'confirm-modal';
+    m.innerHTML = `
+      <div class="modal-inner glass confirm-dialog" role="dialog" aria-modal="true">
+        <div class="modal-head"><h3>${escHtml(title)}</h3><button class="modal-close" data-cancel aria-label="Close">×</button></div>
+        ${message ? `<p class="confirm-msg">${escHtml(message)}</p>` : ''}
+        ${details.length ? `<div class="confirm-details">${details.map(([k, v]) => `<div><span class="tag">${escHtml(k)}</span><b>${escHtml(v)}</b></div>`).join('')}</div>` : ''}
+        ${input ? `<label for="confirm-input">${escHtml(input.label || '')}</label>
+          <input id="confirm-input" type="${escHtml(input.type || 'text')}" placeholder="${escHtml(input.placeholder || '')}" ${input.maxlength ? `maxlength="${Number(input.maxlength)}"` : ''} ${input.inputmode ? `inputmode="${escHtml(input.inputmode)}"` : ''} autocomplete="one-time-code" />
+          <div class="error" id="confirm-error" style="display:none;margin-top:8px;"></div>` : ''}
+        <div class="confirm-actions">
+          <button class="secondary" data-cancel>${escHtml(cancelText)}</button>
+          <button class="${danger ? 'danger' : ''}" data-ok>${escHtml(confirmText)}</button>
+        </div>
+      </div>`;
+    document.body.appendChild(m);
+    const field = m.querySelector('#confirm-input');
+    (field || m.querySelector('[data-ok]')).focus();
+
+    const done = value => { document.removeEventListener('keydown', onKey, true); m.remove(); resolve(value); };
+    const submit = () => {
+      if (!field) return done(true);
+      const v = field.value.trim();
+      if (!v && input.required !== false) {
+        const err = m.querySelector('#confirm-error');
+        err.textContent = `${input.label || 'This field'} is required`; err.style.display = 'block'; field.focus(); return;
+      }
+      done(v);
+    };
+    const onKey = e => {
+      if (e.key === 'Escape') { e.stopPropagation(); done(null); }
+      else if (e.key === 'Enter') { e.preventDefault(); submit(); }
+    };
+    document.addEventListener('keydown', onKey, true);
+    m.addEventListener('click', e => { if (e.target === m) done(null); });
+    m.querySelectorAll('[data-cancel]').forEach(b => b.addEventListener('click', () => done(null)));
+    m.querySelector('[data-ok]').addEventListener('click', submit);
+  });
+}
+
+/* Button busy state helper: await withBusy(btn, 'Working…', async () => {...}) */
+async function withBusy(btn, busyText, fn) {
+  if (!btn) return fn();
+  if (btn.disabled) return;
+  const original = btn.textContent;
+  btn.disabled = true; btn.textContent = busyText;
+  try { return await fn(); } finally { btn.disabled = false; btn.textContent = original; }
+}
+
+/* ============================================================
+   PASSWORD FIELDS: show/hide toggle + strength feedback
+   ============================================================ */
+function passwordStrength(pw) {
+  pw = String(pw || '');
+  const checks = {
+    length: pw.length >= 8,
+    long: pw.length >= 12,
+    mixed: /[a-z]/.test(pw) && /[A-Z]/.test(pw),
+    number: /\d/.test(pw),
+    symbol: /[^A-Za-z0-9]/.test(pw)
+  };
+  const common = /^(password|123456|12345678|qwerty|letmein|admin|welcome|iloveyou)/i.test(pw) || /^(.)\1+$/.test(pw);
+  let score = 0;
+  if (checks.length) score++;
+  if (checks.long || (checks.mixed && checks.number)) score++;
+  if ((checks.mixed ? 1 : 0) + (checks.number ? 1 : 0) + (checks.symbol ? 1 : 0) >= 2) score++;
+  if (checks.long && checks.mixed && checks.number && checks.symbol) score++;
+  if (pw.length < 10) score = Math.min(score, 2);
+  if (!checks.length || common) score = Math.min(score, 1);
+  if (!pw) score = 0;
+  const labels = ['Too weak', 'Weak', 'Fair', 'Good', 'Strong'];
+  const tips = [];
+  if (!checks.length) tips.push('at least 8 characters');
+  if (!checks.mixed) tips.push('upper and lower case letters');
+  if (!checks.number) tips.push('a number');
+  if (!checks.symbol) tips.push('a symbol');
+  if (!checks.long) tips.push('12+ characters for extra strength');
+  return { score, label: pw ? labels[score] : '', tips, ok: checks.length && !common };
+}
+
+function enhancePasswordField(input) {
+  if (input.dataset.pwEnhanced) return;
+  input.dataset.pwEnhanced = '1';
+  const wrap = document.createElement('div');
+  wrap.className = 'pw-field';
+  input.parentNode.insertBefore(wrap, input);
+  wrap.appendChild(input);
+  const btn = document.createElement('button');
+  btn.type = 'button'; btn.className = 'pw-toggle'; btn.textContent = 'Show';
+  btn.setAttribute('aria-label', 'Show password');
+  btn.addEventListener('click', () => {
+    const show = input.type === 'password';
+    input.type = show ? 'text' : 'password';
+    btn.textContent = show ? 'Hide' : 'Show';
+    btn.setAttribute('aria-label', show ? 'Hide password' : 'Show password');
+  });
+  wrap.appendChild(btn);
+
+  if (input.hasAttribute('data-strength')) {
+    const meter = document.createElement('div');
+    meter.className = 'pw-meter';
+    meter.innerHTML = '<div class="pw-bars"><i></i><i></i><i></i><i></i></div><div class="pw-label"></div><div class="pw-tips"></div>';
+    wrap.after(meter);
+    const update = () => {
+      const r = passwordStrength(input.value);
+      meter.dataset.score = input.value ? r.score : '';
+      meter.querySelector('.pw-label').textContent = r.label ? `Password strength: ${r.label}` : '';
+      meter.querySelector('.pw-tips').textContent = input.value && r.tips.length && r.score < 4 ? `Add ${r.tips.slice(0, 3).join(', ')}` : '';
+    };
+    input.addEventListener('input', update);
+  }
+}
+
+function enhancePasswordFields(root = document) {
+  root.querySelectorAll('input[type="password"]').forEach(enhancePasswordField);
+}
+document.addEventListener('DOMContentLoaded', () => {
+  enhancePasswordFields();
+  new MutationObserver(muts => {
+    for (const m of muts) m.addedNodes.forEach(n => { if (n.nodeType === 1) enhancePasswordFields(n.matches?.('input[type="password"]') ? n.parentNode : n); });
+  }).observe(document.body, { childList: true, subtree: true });
 });

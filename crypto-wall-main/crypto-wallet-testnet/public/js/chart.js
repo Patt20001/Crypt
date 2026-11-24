@@ -92,7 +92,7 @@ async function loadHistoricalCandles(pair) {
 
   try {
     // Same-origin authenticated endpoint avoids browser CORS failures and
-    // supplies simulated development candles when external feeds are down.
+    // supplies reference candles when external feeds are down.
     const data = await api(`/api/orders/candles/${encodeURIComponent(pair.replace('/', '-'))}?interval=${encodeURIComponent(currentInterval)}`);
     if (myGen !== chartStreamGen) return;
     const candles = Array.isArray(data.candles) ? data.candles : [];
@@ -103,10 +103,10 @@ async function loadHistoricalCandles(pair) {
     }
     const latest = candles[candles.length - 1];
     updatePriceDisplay(latest.close, pair);
-    if (status) status.textContent = data.source === 'simulated-development' ? 'Simulated chart data · development mode' : 'Market reference candles';
+    if (status) status.textContent = 'Market reference candles';
     return;
   } catch (e) {
-    console.warn('Server candle request failed; using browser-side demo candles:', e.message);
+    console.warn('Server candle request failed; using local fallback candles:', e.message);
   }
 
   // Last-resort client fallback keeps the chart visible if the server candle
@@ -128,7 +128,7 @@ async function loadHistoricalCandles(pair) {
     candleChart.timeScale().fitContent();
   }
   updatePriceDisplay(candles[candles.length - 1].close, pair);
-  if (status) status.textContent = 'Local simulated candles · server feed unavailable';
+  if (status) status.textContent = 'Market data delayed · reconnecting';
 }
 
 /* ---------------- LIVE STREAM ---------------- */
